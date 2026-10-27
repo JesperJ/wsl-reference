@@ -1,0 +1,23 @@
+# Inert while this directory lives inside nixos-config -- GitHub only reads
+# workflows from the repository root. It becomes live when wsl-reference/ is
+# spun out into its own repository.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check --print-build-logs
+      - name: Template evaluates against this checkout
+        run: |
+          tmp=$(mktemp -d)
+          cp templates/default/flake.nix "$tmp/"
+          nix eval "$tmp#nixosConfigurations.wsl.config.system.build.toplevel.drvPath" \
+            --override-input wsl-base "path:$PWD"
