@@ -5,7 +5,7 @@
 { nixpkgs, self }:
 
 { hostName
-, user                      # { name; fullName ? ""; email ? ""; sshKeys ? [ ]; }
+, user                      # { name; fullName ? ""; email ? ""; extraGroups ? [ ]; }
 , stateVersion ? "26.05"    # set once at install, never bump it afterwards
 , extraModules ? [ ]
 }:

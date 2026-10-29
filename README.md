@@ -5,9 +5,10 @@ a hostname, a username and their git identity; everything a project needs
 lives in that project's own `devenv.nix`.
 
 ```
-this flake        -> what every WSL dev box has (nix, devenv, direnv, docker,
-                     nix-ld for VS Code, corporate CA/proxy, git)
-your flake        -> who you are (hostName, user, optional extras)
+this flake         -> what every WSL dev box has (nix, devenv, devenvify,
+                      direnv, docker, nix-ld for VS Code, corporate CA/proxy,
+                      git)
+your flake         -> who you are (hostName, user, optional extras)
 project/devenv.nix -> what the project needs (languages, services, tools)
 ```
 
@@ -22,7 +23,7 @@ project/devenv.nix -> what the project needs (languages, services, tools)
 
    ```bash
    mkdir ~/wsl-config && cd ~/wsl-config
-   nix flake init -t github:YOUR-ORG/wsl-reference
+   nix flake init -t github:JesperJ/wsl-reference
    ```
 
 3. Edit `flake.nix`: `hostName`, `user.name`, `user.fullName`, `user.email`.
@@ -53,12 +54,22 @@ wsl --import NixOS $env:USERPROFILE\NixOS nixos.wsl --version 2   # on Windows
 
 ## For projects: devenv
 
-The machine only provides `devenv` and `direnv`. In a project:
+The machine provides `devenv`, `direnv` and `devenvify`. In a project, start
+from a shared template rather than from scratch:
 
 ```bash
-devenv init        # writes devenv.nix, devenv.yaml and .envrc
+devenvify                 # list the available templates
+devenvify dotnet-mssql    # copy one into the current directory
 direnv allow
 ```
+
+That writes `devenv.nix`, `devenv.yaml` and `.envrc`, and appends to
+`.gitignore` without clobbering it; existing files are left alone unless you
+pass `-f`. `devenv init` still works if you would rather begin empty.
+
+The templates come from the `devenv-templates` input and are baked into the
+`devenvify` derivation, so nothing needs that repository checked out. After a
+template changes upstream: `nix flake update devenv-templates`, then rebuild.
 
 From then on, entering the directory loads the project's shell. Binary caches
 a project lists in `devenv.yaml` (`cachix.pull`) are honoured because the
@@ -72,10 +83,8 @@ flake:
 | Option | Default | What it does |
 |---|---|---|
 | `company.user.{name,fullName,email}` | -- | Login name, git identity |
-| `company.user.sshKeys` | `[]` | Authorised keys, used with `sshServer` |
 | `company.user.extraGroups` | `[]` | Groups beyond `wheel` and `docker` |
 | `company.docker.enable` | `true` | Native Docker in the distro |
-| `company.sshServer.enable` | `false` | sshd on 2222, key-only |
 | `company.extraPackages` | `[]` | Machine-wide extras (project tools go in devenv) |
 | `company.home.modules` | `[]` | Your own home-manager modules (shell, dotfiles) |
 | `company.nix.trustUser` | `true` | User in `trusted-users`, so devenv caches work |
@@ -113,9 +122,17 @@ nixosConfigurations.wsl = nixpkgs.lib.nixosSystem {
 - **Passwordless sudo is kept.** NixOS-WSL sets it, deliberately: on WSL,
   `wsl -u root` from Windows is root without any password, so a sudo password
   stops no one and locks out the owner. The Windows login is the boundary.
-- **No `flake.lock` yet.** Run `nix flake lock` once and commit the result
-  when this becomes its own repository, so consumers get the versions CI
-  tested.
+- **No sshd.** A WSL2 distro sits behind NAT, so reaching it from outside
+  needs mirrored networking in `.wslconfig` or a `netsh portproxy` on the
+  Windows side -- and anyone who can run `wsl.exe` already has a root shell
+  without authenticating. So an sshd here adds a listening service and an
+  `authorized_keys` file to maintain while protecting nothing. VS Code Remote
+  - WSL does not use ssh. If a machine genuinely needs it, `extraModules` can
+  set `services.openssh` and
+  `users.users.<name>.openssh.authorizedKeys.keys` directly.
+- **`flake.lock` is committed.** Consumers get the versions CI tested, not
+  whatever the branches moved to today. Bump deliberately with
+  `nix flake update <input>`.
 - `system.stateVersion` is set at install and never bumped afterwards; it is
   not the NixOS version.
 
@@ -131,13 +148,18 @@ spin-out.
 
 ## Spinning out
 
-History is kept by splitting the subdirectory into its own branch:
+This tree is mirrored to <https://github.com/JesperJ/wsl-reference>, which is
+where consumers point. History was kept by splitting the subdirectory rather
+than copying files:
 
 ```bash
 cd nixos-config
 git subtree split --prefix=wsl-reference -b wsl-reference-export
-git push git@github.com:YOUR-ORG/wsl-reference.git wsl-reference-export:main
+git push git@github.com:JesperJ/wsl-reference.git wsl-reference-export:main
 ```
 
-Then in the new repository: `nix flake lock`, commit the lock, tag `v0.1.0`,
-and replace `YOUR-ORG` in `templates/default/flake.nix` and this README.
+Re-run those two commands to push later changes made here. The standalone
+repository is the one CI runs in, and the one `nix flake init -t` reads.
+
+Remaining before a colleague can use it: tag `v0.1.0`, which is the ref
+`templates/default/flake.nix` pins.

@@ -1,8 +1,15 @@
 # What every project's devenv shell assumes the machine already has.
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, devenvTemplates, ... }:
 
 let
   cfg = config.company;
+
+  # devenvify copies one of the bundled devenv templates into a project, so a
+  # new repository starts from the shell everyone else already has instead of
+  # from `devenv init` and guesswork. The templates are baked into the
+  # derivation, so no machine needs the templates repository checked out --
+  # run `devenvify` with no arguments to list them.
+  devenvify = pkgs.callPackage "${devenvTemplates}/package.nix" { };
 in
 {
   options.company = {
@@ -11,12 +18,6 @@ in
       default = true;
       description = "Native Docker inside the distro, for devenv containers and VS Code dev containers.";
     };
-
-    sshServer.enable = lib.mkEnableOption ''
-      sshd on port 2222, key-only. Off by default: WSL2 sits behind NAT, so it
-      is only reachable with mirrored networking in .wslconfig or a netsh
-      portproxy, and 2222 avoids clashing with Windows' own sshd
-    '';
 
     extraPackages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
@@ -33,6 +34,7 @@ in
     {
       environment.systemPackages = with pkgs; [
         devenv
+        devenvify
         git
         curl
         wget
@@ -49,18 +51,6 @@ in
     (lib.mkIf cfg.docker.enable {
       virtualisation.docker.enable = true;
       users.users.${cfg.user.name}.extraGroups = [ "docker" ];
-    })
-
-    (lib.mkIf cfg.sshServer.enable {
-      services.openssh = {
-        enable = true;
-        ports = [ 2222 ];
-        settings = {
-          PasswordAuthentication = false;
-          KbdInteractiveAuthentication = false;
-          PermitRootLogin = "no";
-        };
-      };
     })
   ];
 }

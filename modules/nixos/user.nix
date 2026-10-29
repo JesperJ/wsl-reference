@@ -1,6 +1,13 @@
 # The one person this machine belongs to. A WSL distro has exactly one user --
 # wsl.defaultUser takes a single name -- so this is a single submodule, not a
 # list of members.
+#
+# No sshKeys option: there is no sshd here. WSL2 sits behind NAT, so reaching
+# it needs mirrored networking or a netsh portproxy on the Windows side, and
+# anyone who can run wsl.exe already has a root shell without authenticating.
+# A machine nobody logs into over the network needs no authorized_keys. Should
+# one ever want it, extraModules can set services.openssh and
+# users.users.<name>.openssh.authorizedKeys.keys directly.
 { config, lib, ... }:
 
 let
@@ -26,12 +33,6 @@ in
       description = "Used for git's user.email. Omitted from git config when empty.";
     };
 
-    sshKeys = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      description = "Public keys allowed to log in, only relevant with company.sshServer.enable.";
-    };
-
     extraGroups = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -50,7 +51,6 @@ in
     # has no password. The Windows login is the real boundary here.
     users.users.${cfg.name} = {
       extraGroups = cfg.extraGroups;
-      openssh.authorizedKeys.keys = cfg.sshKeys;
     };
   };
 }

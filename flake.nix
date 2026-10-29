@@ -14,9 +14,23 @@
       url = "github:nix-community/NixOS-WSL";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The devenv project templates that `devenvify` copies, as a plain SOURCE
+    # rather than a flake. `flake = false` on purpose: that repository has a
+    # flake.nix, but consuming it would bring its own nixpkgs and build the
+    # tool against that. As a source it is just a store path, and dev.nix
+    # callPackages the package.nix at its root against OUR pkgs -- so the
+    # machine stays on one nixpkgs.
+    #
+    # Bumping after a template changes: `nix flake update devenv-templates`,
+    # then rebuild. No tag to edit: the payload is a shell script and template
+    # files, nothing a machine boots.
+    devenv-templates = {
+      url = "github:JesperJ/devenv-templates";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager, nixos-wsl, ... }:
+  outputs = { self, nixpkgs, home-manager, nixos-wsl, devenv-templates, ... }:
     let
       system = "x86_64-linux";
       lib = nixpkgs.lib;
@@ -33,6 +47,12 @@
             home-manager.nixosModules.home-manager
             ./modules/nixos
           ];
+
+          # The templates source, handed to the modules as an argument so
+          # ./modules/nixos stays a plain module tree with no flake in scope.
+          # It travels with nixosModules.default, so a consumer who imports the
+          # module into their own nixosSystem gets it without wiring anything.
+          _module.args.devenvTemplates = devenv-templates;
         };
       };
 
