@@ -143,23 +143,27 @@ nix flake check                  # builds nixosConfigurations.example
 ```
 
 `.github/workflows/check.yml` does the same plus evaluates the template. It
-is inert while this lives inside `nixos-config` and starts running after the
-spin-out.
+runs in the standalone repository; the copy inside `nixos-config` is inert,
+because GitHub only reads workflows from a repository root.
 
 ## Spinning out
 
 This tree is mirrored to <https://github.com/JesperJ/wsl-reference>, which is
-where consumers point. History was kept by splitting the subdirectory rather
-than copying files:
+what consumers point at and where CI runs. History was kept by splitting the
+subdirectory rather than copying files, so the standalone repository carries
+the commits that made each change here.
+
+To push later changes made in `nixos-config`:
 
 ```bash
 cd nixos-config
-git subtree split --prefix=wsl-reference -b wsl-reference-export
-git push git@github.com:JesperJ/wsl-reference.git wsl-reference-export:main
+git subtree push --prefix=wsl-reference \
+  git@github.com:JesperJ/wsl-reference.git main
 ```
 
-Re-run those two commands to push later changes made here. The standalone
-repository is the one CI runs in, and the one `nix flake init -t` reads.
+`git subtree push` re-splits and pushes in one step, which is what makes it
+repeatable -- the `git subtree split -b <branch>` form used for the first
+export refuses to run again once that branch exists.
 
 Remaining before a colleague can use it: tag `v0.1.0`, which is the ref
-`templates/default/flake.nix` pins.
+`templates/default/flake.nix` pins, and make the repository public.
