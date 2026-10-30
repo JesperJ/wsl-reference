@@ -1,0 +1,208 @@
+# Getting started
+
+The path from a Windows machine with nothing installed to a project shell that
+loads itself when you `cd` into it. The [README](README.md) is the reference --
+what the options are, and why the baseline is shaped the way it is. This is the
+walkthrough.
+
+If a maintainer handed you a ready-made `nixos.wsl` with your details already
+in it, your name and git identity are already set: install it as in step 1 and
+skip to step 4.
+
+## Step 1: WSL and NixOS-WSL
+
+NixOS-WSL expects the Microsoft Store version of WSL 2, which is available on
+both Windows 10 and 11. If you have no WSL yet, from PowerShell:
+
+```powershell
+wsl --install --no-distribution
+```
+
+Restart if it asks. Then download `nixos.wsl` from the
+[latest NixOS-WSL release](https://github.com/nix-community/NixOS-WSL/releases/latest)
+and install it. On WSL 2.4.4 or newer you can double-click the file, or:
+
+```powershell
+wsl --install --from-file nixos.wsl
+```
+
+On older WSL:
+
+```powershell
+wsl --import NixOS $env:USERPROFILE\NixOS nixos.wsl --version 2
+```
+
+Open a shell with `wsl -d NixOS`, or pick NixOS from the Windows Terminal
+dropdown. You are the `nixos` user for now, with passwordless sudo.
+
+## Step 2: your own configuration
+
+The stock image does not have flakes switched on yet -- this baseline turns
+them on, but it has not been applied -- so the first few commands pass the
+feature explicitly. Either prefix each with the flag:
+
+```bash
+alias nixf="nix --extra-experimental-features 'nix-command flakes'"
+mkdir ~/wsl-config && cd ~/wsl-config
+nixf flake init -t github:JesperJ/wsl-reference
+```
+
+...or skip flakes entirely and use the flakeless route in
+[Without flakes](README.md#without-flakes), which needs no experimental
+features at all.
+
+Now edit `flake.nix` and set four things:
+
+| Field | What it is |
+|---|---|
+| `hostName` | What the machine calls itself, e.g. `WSL-ANNA` |
+| `user.name` | The login name you want. **Not** `nixos` -- this creates your account |
+| `user.fullName` | Your name, for git commits |
+| `user.email` | Your work email, for git commits |
+
+Then put it under git, because a flake only sees tracked files:
+
+```bash
+git init && git add -A
+```
+
+## Step 3: the first switch
+
+This step is the one to do carefully, and only once. You are changing the
+machine's username -- the image ships as `nixos` and you are creating your own
+account -- and for that NixOS-WSL is explicit that `nixos-rebuild switch` can
+leave the new account misconfigured. Use `boot`, then restart the distro in
+the prescribed order.
+
+In the WSL shell:
+
+```bash
+sudo nixos-rebuild boot --flake .#wsl \
+  --option extra-experimental-features 'nix-command flakes'
+```
+
+Then from Windows (PowerShell or Command Prompt):
+
+```powershell
+wsl -t NixOS
+wsl -d NixOS --user root exit
+wsl -t NixOS
+```
+
+Open a WSL shell again. `whoami` should be your own name. From here on a
+change is just:
+
+```bash
+sudo nixos-rebuild switch --flake .#wsl
+```
+
+No flag, no restart: the baseline has turned flakes on, and `switch` is the
+right verb for everything that is not a username change.
+
+## Step 4: check it worked
+
+```bash
+whoami                      # your name, not nixos
+git config --get user.email # your address, from /etc/gitconfig
+direnv --version            # the project bridge
+devenv version
+devenvify                   # lists the shared project templates
+docker run --rm hello-world # native docker in the distro
+```
+
+If `git config --get user.email` is empty, `user.email` in your `flake.nix` is
+still the placeholder.
+
+## Step 5: your first project
+
+Project tooling does not go in the machine config. It goes in the project, so
+it travels with the repository and everyone gets the same shell:
+
+```bash
+cd ~/code/my-service
+devenvify                 # see what templates exist
+devenvify dotnet-mssql    # copy one in
+direnv allow
+```
+
+That writes `devenv.nix`, `devenv.yaml` and `.envrc`, and appends to
+`.gitignore` without clobbering it. Existing files are left alone unless you
+pass `-f`. From now on, entering the directory loads the project's shell and
+leaving it unloads it. `devenv init` still works if you would rather start
+empty.
+
+The first `direnv allow` builds the shell and can take a while; afterwards it
+is cached and instant.
+
+## VS Code
+
+Install the **WSL** extension on the Windows side, then run `code .` from
+inside a project. The server VS Code downloads is a generic Linux binary that
+NixOS would normally refuse to start; the baseline enables `nix-ld` so it runs.
+Nothing to configure.
+
+## Day to day
+
+| Task | Command |
+|---|---|
+| Apply a config change | `sudo nixos-rebuild switch --flake .#wsl` |
+| Update the baseline | edit the tag in `inputs.wsl-base.url`, then `nix flake update wsl-base` and switch |
+| Update project templates | `nix flake update devenv-templates` in your config, then switch |
+| See past generations | `sudo nix-env --list-generations -p /nix/var/nix/profiles/system` |
+| Go back one | `sudo nixos-rebuild switch --rollback` |
+| Free disk space | happens weekly on its own; force with `sudo nix-collect-garbage -d` |
+| Shut the distro down | `wsl -t NixOS` from Windows |
+
+## On a corporate network
+
+The things that break first are the same for everyone, so they belong in the
+baseline rather than in your flake -- tell whoever maintains it. If you need
+them locally in the meantime, they are
+[options](README.md#options): `company.network.caCertificates` for a
+TLS-inspecting proxy, `company.network.proxy` for an HTTP proxy (it reaches
+the nix daemon too, which is what actually fetches), and
+`company.network.windowsDns`, on by default, which lets WSL generate
+`/etc/resolv.conf` from Windows so VPN DNS works.
+
+## Troubleshooting
+
+**`experimental Nix feature 'nix-command' is disabled`**
+You are still on the stock image. Add
+`--option extra-experimental-features 'nix-command flakes'` as in step 3, or
+use the flakeless route.
+
+**`path ... is not tracked by Git`, or `does not provide attribute`**
+A flake only sees tracked files. `git add -A` and try again.
+
+**Still logged in as `nixos` after the first switch**
+The restart sequence in step 3 was not completed. Run the three `wsl` commands
+and open a fresh shell.
+
+**`error: file 'nixpkgs' was not found in the Nix search path`**
+Run `sudo nix-channel --update` once, as NixOS-WSL's install notes say. The
+flake does not need channels, but the stock image's tooling can still ask.
+
+**devenv compiles everything instead of downloading it**
+A project's binary caches from `devenv.yaml` are only honoured for a trusted
+Nix user. The baseline makes you one (`company.nix.trustUser`, on by default),
+so this means either that it is switched off, or that the cache needs its key
+in `company.nix.extraTrustedPublicKeys`.
+
+**A project tool is missing**
+It belongs in that project's `devenv.nix`, not in the machine. If it is
+genuinely machine-wide -- something you want in every project -- it is
+`company.extraPackages`.
+
+## Where things belong
+
+This is the discipline that keeps a shared baseline shareable:
+
+```
+the baseline          -> what every WSL dev box has (nix, devenv, direnv,
+                         docker, nix-ld, corporate CA/proxy, git)
+your flake.nix        -> who you are: hostname, login name, git identity
+project/devenv.nix    -> what the project needs: languages, services, tools
+```
+
+If you find yourself adding a language or a database to your `flake.nix`, it
+almost certainly belongs in a project instead.

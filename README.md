@@ -18,26 +18,44 @@ project/devenv.nix -> what the project needs (languages, services, tools)
 
 ## For colleagues: setting up a machine
 
+[GETTING-STARTED.md](GETTING-STARTED.md) is the walkthrough, with the Windows
+side, the checks and the troubleshooting. In short:
+
 1. Install NixOS-WSL (<https://github.com/nix-community/NixOS-WSL>), open it.
-2. Create your config from the template:
+2. Create your config from the template. The stock image does not have flakes
+   on yet -- this baseline is what turns them on -- so pass the feature for
+   now, or use [Without flakes](#without-flakes) instead:
 
    ```bash
    mkdir ~/wsl-config && cd ~/wsl-config
-   nix flake init -t github:JesperJ/wsl-reference
+   nix --extra-experimental-features 'nix-command flakes' \
+     flake init -t github:JesperJ/wsl-reference
    ```
 
 3. Edit `flake.nix`: `hostName`, `user.name`, `user.fullName`, `user.email`.
    `user.name` should be the user you want to log in as -- on the first
-   switch NixOS-WSL creates it and makes it the default.
-4. Apply:
+   build NixOS-WSL creates it and makes it the default.
+4. Apply. `boot` rather than `switch`, and the restart sequence in full:
+   this first build changes the machine's username, and NixOS-WSL warns that
+   `switch` can leave the new account misconfigured.
 
    ```bash
    git init && git add -A   # flakes only see tracked files
-   sudo nixos-rebuild switch --flake .#wsl
+   sudo nixos-rebuild boot --flake .#wsl \
+     --option extra-experimental-features 'nix-command flakes'
    ```
 
-   Then from Windows: `wsl --terminate NixOS` and reopen, so WSL starts as
-   the new user.
+   Then from Windows:
+
+   ```powershell
+   wsl -t NixOS
+   wsl -d NixOS --user root exit
+   wsl -t NixOS
+   ```
+
+   Open a shell again and you are your own user. Every later change is a
+   plain `sudo nixos-rebuild switch --flake .#wsl`, with no flag and no
+   restart.
 
 Updating later: bump the tag in `inputs.wsl-base.url`, run
 `nix flake update wsl-base`, then `sudo nixos-rebuild switch --flake .#wsl`.
