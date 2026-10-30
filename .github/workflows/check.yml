@@ -21,3 +21,25 @@ jobs:
           cp templates/default/flake.nix "$tmp/"
           nix eval "$tmp#nixosConfigurations.wsl.config.system.build.toplevel.drvPath" \
             --override-input wsl-base "path:$PWD"
+      - name: Flakeless entry point reaches the same derivation
+        run: |
+          # Not just "it evaluates": if ./default.nix drifts from the flake,
+          # people who came in without flakes are quietly on a different
+          # machine. A legitimate cause of divergence is a module referencing
+          # a path, which the flake copies git-filtered and flake-compat
+          # copies whole; anything else is a bug.
+          flake=$(nix eval --raw .#nixosConfigurations.example.config.system.build.toplevel.drvPath)
+          plain=$(nix-instantiate -A nixosConfigurations.example.config.system.build.toplevel ./.)
+          if [ "$flake" != "$plain" ]; then
+            echo "flake path: $flake"
+            echo "plain path: $plain"
+            exit 1
+          fi
+      - name: A flakeless consumer can call mkWsl
+        run: |
+          tmp=$(mktemp -d)
+          cat > "$tmp/default.nix" <<EOF
+          let wsl-base = import $PWD;
+          in { wsl = wsl-base.lib.mkWsl { hostName = "ci"; user.name = "dev"; }; }
+          EOF
+          nix-instantiate -A wsl.config.system.build.toplevel "$tmp"

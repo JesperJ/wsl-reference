@@ -15,6 +15,13 @@
       url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Only used by ./default.nix, the non-flake entry point, which reads this
+    # lock to find the revision. Declared as an input rather than pinned by
+    # hand so `nix flake update` keeps it current like everything else.
+    flake-compat = {
+      url = "github:edolstra/flake-compat";
+      flake = false;
+    };
     nixos-wsl = {
       url = "github:nix-community/NixOS-WSL";
       inputs.nixpkgs.follows = "nixpkgs";

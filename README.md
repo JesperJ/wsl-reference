@@ -52,6 +52,63 @@ sudo nix run .#nixosConfigurations.wsl.config.system.build.tarballBuilder
 wsl --import NixOS $env:USERPROFILE\NixOS nixos.wsl --version 2   # on Windows
 ```
 
+### Without flakes
+
+Flakes are the default and the supported way in, but they are not a
+requirement. `default.nix` reads this repository's `flake.lock` through
+flake-compat, in ordinary Nix with no experimental features, so a flakeless
+consumer still gets the versions CI tested -- it produces a byte-identical
+derivation to the flake path, and CI asserts that.
+
+Write a `default.nix` of your own:
+
+```nix
+let
+  wsl-base = import (builtins.fetchTarball {
+    url = "https://github.com/JesperJ/wsl-reference/archive/v0.1.0.tar.gz";
+    # Omit for a quick start, at the cost of a re-fetch every hour;
+    # `nix-prefetch-url --unpack <url>` prints the value to pin.
+    sha256 = "...";
+  });
+in
+{
+  nixosConfigurations.wsl = wsl-base.lib.mkWsl {
+    hostName = "WSL-CHANGEME";
+    user = {
+      name = "changeme";
+      fullName = "Change Me";
+      email = "change.me@company.com";
+    };
+  };
+}
+```
+
+and switch to it:
+
+```bash
+sudo nixos-rebuild switch -f . -A nixosConfigurations.wsl
+```
+
+Note the `import (...)` with no argument after it: `default.nix` evaluates to
+an attribute set, not a function.
+
+Everything the flake exposes is on that attribute set, so the module route
+works too -- and `wsl-base.inputs.nixpkgs` is the nixpkgs from this lock,
+which means no channel to configure:
+
+```nix
+wsl-base.inputs.nixpkgs.lib.nixosSystem {
+  system = "x86_64-linux";
+  modules = [
+    wsl-base.nixosModules.default
+    { networking.hostName = "WSL-ANNA"; company.user.name = "anna";
+      system.stateVersion = "26.05"; }
+  ];
+}
+```
+
+Updating later: edit the tag in the URL and re-pin `sha256`.
+
 ## For projects: devenv
 
 The machine provides `devenv`, `direnv` and `devenvify`. In a project, start
@@ -157,6 +214,13 @@ user level -- the part that works unchanged on a WSL distro that is not NixOS.
   - WSL does not use ssh. If a machine genuinely needs it, `extraModules` can
   set `services.openssh` and
   `users.users.<name>.openssh.authorizedKeys.keys` directly.
+- **Flakes are the default, not a requirement.** `default.nix` exists so a
+  machine that cannot enable them is not shut out. It resolves the same
+  `flake.lock`, and CI asserts it reaches the same derivation as the flake
+  path, so the flakeless route is the same machine rather than a second one
+  that drifts. The box itself still has `nix-command` and `flakes` switched
+  on either way, because devenv needs them -- what is optional is how the
+  configuration is consumed, not what the machine can do.
 - **`flake.lock` is committed.** Consumers get the versions CI tested, not
   whatever the branches moved to today. Bump deliberately with
   `nix flake update <input>`.
@@ -170,7 +234,8 @@ nix flake check                  # builds the example machines, bare and with
                                  # the home-manager opt-in
 ```
 
-`.github/workflows/check.yml` does the same plus evaluates the template. It
+`.github/workflows/check.yml` does the same, plus evaluates the template and
+checks that `default.nix` reaches the same derivation as the flake. It
 runs in the standalone repository; the copy inside `nixos-config` is inert,
 because GitHub only reads workflows from a repository root.
 
