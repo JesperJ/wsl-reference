@@ -86,7 +86,7 @@ flake:
 | `company.user.extraGroups` | `[]` | Groups beyond `wheel` and `docker` |
 | `company.docker.enable` | `true` | Native Docker in the distro |
 | `company.extraPackages` | `[]` | Machine-wide extras (project tools go in devenv) |
-| `company.home.modules` | `[]` | Your own home-manager modules (shell, dotfiles) |
+| `company.home.modules` | `[]` | Your own home-manager modules -- only with the opt-in module, see [Dotfiles](#dotfiles-optional) |
 | `company.nix.trustUser` | `true` | User in `trusted-users`, so devenv caches work |
 | `company.nix.extraSubstituters` / `extraTrustedPublicKeys` | `[]` | Extra binary caches |
 | `company.network.caCertificates` | `[]` | Corporate root CAs |
@@ -111,11 +111,38 @@ nixosConfigurations.wsl = nixpkgs.lib.nixosSystem {
 };
 ```
 
+## Dotfiles (optional)
+
+The baseline does not manage `$HOME` -- see the design note below. If you want
+your shell and dotfiles declared too, opt in from your own flake:
+
+```nix
+extraModules = [
+  wsl-base.nixosModules.home-manager
+  { company.home.modules = [ ./home.nix ]; }
+];
+```
+
+That wires home-manager into the same `nixos-rebuild switch` and layers your
+modules over `modules/home`, which also carries a git identity and direnv at
+user level -- the part that works unchanged on a WSL distro that is not NixOS.
+
 ## Design notes
 
 - **Module first, function second.** `lib.mkWsl` only turns arguments into
   `company.*` options. Anything it does not expose is reachable through
   `extraModules`, so nobody has to fork to deviate.
+- **No home-manager by default.** Everything the baseline needs from it is a
+  plain NixOS option: `programs.direnv` installs the hook every devenv project
+  relies on, and `programs.git.config` writes the identity to `/etc/gitconfig`,
+  which is the right scope for a distro with exactly one user. What
+  home-manager would add on top is a managed `$HOME` -- and there
+  `~/.config/git/config` becomes a read-only store symlink, so
+  `git config --global` fails, while a generated `~/.bashrc` reverts
+  hand-edits on the next switch. A fair trade for someone who chose it, a bad
+  surprise for someone handed a work machine, so it is
+  [opt-in](#dotfiles-optional). NixOS itself is already unfamiliar at the
+  system level; `$HOME` is where muscle memory lives.
 - **Stable nixpkgs.** Many people rebuild from this; a broken unstable bump
   would break all of them at once. Projects needing newer tools get them from
   devenv, which pins its own nixpkgs.
@@ -139,7 +166,8 @@ nixosConfigurations.wsl = nixpkgs.lib.nixosSystem {
 ## Checking
 
 ```bash
-nix flake check                  # builds nixosConfigurations.example
+nix flake check                  # builds the example machines, bare and with
+                                 # the home-manager opt-in
 ```
 
 `.github/workflows/check.yml` does the same plus evaluates the template. It

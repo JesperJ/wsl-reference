@@ -6,6 +6,11 @@
   # tools get them from their own devenv.nix, which pins its own nixpkgs.
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+    # Only for nixosModules.home-manager, which is opt-in. Kept as an input
+    # anyway so opting in costs one line in extraModules instead of a
+    # home-manager input of your own plus
+    # `inputs.home-manager.inputs.nixpkgs.follows = "wsl-base/nixpkgs"` to keep
+    # the two nixpkgs from diverging.
     home-manager = {
       url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -44,7 +49,6 @@
         wsl-dev = {
           imports = [
             nixos-wsl.nixosModules.default
-            home-manager.nixosModules.home-manager
             ./modules/nixos
           ];
 
@@ -53,6 +57,16 @@
           # It travels with nixosModules.default, so a consumer who imports the
           # module into their own nixosSystem gets it without wiring anything.
           _module.args.devenvTemplates = devenv-templates;
+        };
+
+        # Opt-in: declarative dotfiles for someone who wants them. Added to
+        # extraModules, never imported by the baseline -- see
+        # modules/home-manager.nix for why a shared base leaves $HOME alone.
+        home-manager = {
+          imports = [
+            home-manager.nixosModules.home-manager
+            ./modules/home-manager.nix
+          ];
         };
       };
 
@@ -75,8 +89,26 @@
         };
       };
 
-      checks.${system}.example =
-        self.nixosConfigurations.example.config.system.build.toplevel;
+      # The opt-in path, built too: an escape hatch nobody tests is an escape
+      # hatch that has already rotted.
+      nixosConfigurations.example-home-manager = self.lib.mkWsl {
+        hostName = "wsl-example-hm";
+        user = {
+          name = "dev";
+          fullName = "Example Developer";
+          email = "dev@example.com";
+        };
+        extraModules = [
+          self.nixosModules.home-manager
+          { company.home.modules = [ { programs.zsh.enable = true; } ]; }
+        ];
+      };
+
+      checks.${system} = {
+        example = self.nixosConfigurations.example.config.system.build.toplevel;
+        example-home-manager =
+          self.nixosConfigurations.example-home-manager.config.system.build.toplevel;
+      };
 
       formatter.${system} = nixpkgs.legacyPackages.${system}.nixpkgs-fmt;
     };

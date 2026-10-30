@@ -32,16 +32,26 @@ in
 
   config = lib.mkMerge [
     {
+      # git is not listed here: ./git.nix enables programs.git, which installs
+      # the package along with /etc/gitconfig.
       environment.systemPackages = with pkgs; [
         devenv
         devenvify
-        git
         curl
         wget
         vim
         file
         unzip
       ] ++ cfg.extraPackages;
+
+      # The bridge to every project: entering a directory whose .envrc says
+      # `use devenv` loads that project's shell. The NixOS module installs
+      # direnv, sources the hook into interactive shells and enables
+      # nix-direnv, whose cache makes that instant after the first time.
+      programs.direnv = {
+        enable = true;
+        settings.global.hide_env_diff = true;
+      };
 
       # VS Code Remote - WSL downloads a generic Linux node server and extension
       # binaries that NixOS' stub-ld refuses to start; nix-ld runs them.

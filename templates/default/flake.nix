@@ -17,9 +17,14 @@
       # Everything below is optional. Project tooling does NOT go here -- it
       # goes in that project's devenv.nix.
       extraModules = [
+        # Declarative dotfiles, if you want them. The baseline leaves $HOME
+        # alone, so `git config --global` and hand-edits to ~/.bashrc keep
+        # working; uncomment these two to hand it to home-manager instead.
+        # wsl-base.nixosModules.home-manager
+        # { company.home.modules = [ ./home.nix ]; }
+
         ({ pkgs, ... }: {
           # company.extraPackages = [ pkgs.k9s ];
-          # company.home.modules = [ ./home.nix ];
         })
       ];
     };
