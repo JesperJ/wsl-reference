@@ -21,6 +21,12 @@ jobs:
           cp templates/default/flake.nix "$tmp/"
           nix eval "$tmp#nixosConfigurations.wsl.config.system.build.toplevel.drvPath" \
             --override-input wsl-base "path:$PWD"
+      - name: Home template evaluates against this checkout
+        run: |
+          tmp=$(mktemp -d)
+          cp templates/home/flake.nix "$tmp/"
+          nix eval "$tmp#homeConfigurations.changeme.activationPackage.drvPath" \
+            --override-input wsl-base "path:$PWD"
       - name: Flakeless entry point reaches the same derivation
         run: |
           # Not just "it evaluates": if ./default.nix drifts from the flake,

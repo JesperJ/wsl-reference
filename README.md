@@ -168,6 +168,13 @@ flake:
 | `company.network.proxy` / `noProxy` | `null` | HTTP(S) proxy, including for nix-daemon |
 | `company.network.windowsDns` | `true` | Let WSL generate `resolv.conf` from Windows |
 
+Most of these mean the same thing on a machine that is not NixOS; they are
+declared once in `modules/options.nix` and implemented twice. The exceptions
+need a whole system and are NixOS-only: `company.user.extraGroups`,
+`company.docker.enable`, `company.nix.trustUser` and
+`company.network.windowsDns`. See
+[A distro that is not NixOS](#a-distro-that-is-not-nixos).
+
 The company-wide values (CA, proxy, internal cache) belong in this repository,
 set once in `modules/nixos/network.nix` or `nix.nix`, not repeated in every
 colleague's flake.
@@ -202,6 +209,57 @@ That wires home-manager into the same `nixos-rebuild switch` and layers your
 modules over `modules/home`, which also carries a git identity and direnv at
 user level -- the part that works unchanged on a WSL distro that is not NixOS.
 
+## A distro that is not NixOS
+
+NixOS-WSL is the supported way to run this, and what the rest of this README
+assumes. But the parts of the baseline that live in `$HOME` do not need NixOS
+underneath, so Ubuntu or Debian with Nix installed can have most of it through
+home-manager:
+
+```bash
+mkdir ~/wsl-config && cd ~/wsl-config
+nix flake init -t github:JesperJ/wsl-reference#home
+# edit flake.nix, then, once:
+nix run home-manager/release-26.05 -- switch --flake .#changeme
+```
+
+Afterwards it is `home-manager switch --flake .#<name>`. The `company.*`
+options mean the same things here -- they are declared once in
+`modules/options.nix` and implemented twice, by `modules/nixos` and by
+`modules/home/standalone.nix`.
+
+| | NixOS-WSL | This tier |
+|---|---|---|
+| devenv, devenvify, direnv + nix-direnv | yes | yes |
+| git identity | `/etc/gitconfig` | `~/.config/git/config` |
+| `company.extraPackages` | `environment.systemPackages` | `home.packages` |
+| weekly gc | system timer | systemd *user* timer |
+| extra binary caches | `/etc/nix/nix.conf` | `~/.config/nix/nix.conf`, and only for a trusted user |
+| CA certificates | system bundle, nix-daemon included | this user's own tools only |
+| proxy | shell and nix-daemon | shell only |
+| `company.nix.trustUser` | yes | **not possible, see below** |
+| docker | `company.docker.enable` | the distro's package manager |
+| nix-ld for VS Code | needed, and enabled | not needed: the distro has a real `ld-linux` |
+| `/etc/wsl.conf`, WSL DNS | managed | yours to edit |
+
+Three things are root's, once, before the first switch:
+
+1. **Make yourself a trusted Nix user.** Nix reads `trusted-users` only from
+   root's `/etc/nix/nix.conf`, by design -- a user who could grant it to
+   themselves would not be restricted by it -- so this tier cannot do it for
+   you. Skip it and the caches a project names in its `devenv.yaml` are
+   silently ignored, and every project builds what a cache already has. Pass
+   `--extra-conf "trusted-users = root $USER"` to the Nix installer, or add
+   that line to `/etc/nix/nix.conf` and `sudo systemctl restart nix-daemon`.
+2. **Enable systemd** if the distro has not: `systemd=true` under `[boot]` in
+   `/etc/wsl.conf`, then `wsl -t <distro>` from Windows. The gc timer is a
+   user service and needs a session.
+3. **Docker and the system CA store**, if you need them: the distro's package
+   manager, and `/usr/local/share/ca-certificates` plus
+   `update-ca-certificates`. `company.network.caCertificates` still points
+   this user's tools at a bundle it builds, but the nix daemon reads its own
+   environment and that is root's to set.
+
 ## Design notes
 
 - **Module first, function second.** `lib.mkWsl` only turns arguments into
@@ -218,6 +276,15 @@ user level -- the part that works unchanged on a WSL distro that is not NixOS.
   surprise for someone handed a work machine, so it is
   [opt-in](#dotfiles-optional). NixOS itself is already unfamiliar at the
   system level; `$HOME` is where muscle memory lives.
+- **Two tiers, one vocabulary.** `modules/options.nix` declares the options
+  both tiers can honour and implements none of them; `modules/nixos` and
+  `modules/home/standalone.nix` each implement them in their own terms. So
+  there is one set of names to document, and moving a colleague from Ubuntu to
+  NixOS-WSL changes the entry point rather than the configuration. Options
+  that need a whole system stay declared beside the tier that can honour them,
+  which makes asking for one on the home tier an evaluation error -- `The
+  option 'company.docker' does not exist` -- instead of a setting that
+  silently does nothing.
 - **Stable nixpkgs.** Many people rebuild from this; a broken unstable bump
   would break all of them at once. Projects needing newer tools get them from
   devenv, which pins its own nixpkgs.
@@ -248,8 +315,8 @@ user level -- the part that works unchanged on a WSL distro that is not NixOS.
 ## Checking
 
 ```bash
-nix flake check                  # builds the example machines, bare and with
-                                 # the home-manager opt-in
+nix flake check                  # builds all three examples: the machine, the
+                                 # home-manager opt-in, and the non-NixOS tier
 ```
 
 `.github/workflows/check.yml` does the same, plus evaluates the template and

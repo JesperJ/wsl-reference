@@ -77,12 +77,38 @@
         };
       };
 
-      # The 15-line path: a machine is a name, a user and a few facts.
-      lib.mkWsl = import ./lib/mkWsl.nix { inherit nixpkgs self; };
 
-      templates.default = {
-        path = ./templates/default;
-        description = "A personal WSL machine built on the shared baseline";
+      # For a WSL distro that is NOT NixOS -- Ubuntu or Debian with Nix on top.
+      # The same company.* options, implemented with only what a user can own;
+      # see modules/home/standalone.nix and the README for the handful of
+      # things that stay root's job.
+      homeModules = {
+        default = self.homeModules.wsl-dev;
+        wsl-dev = {
+          imports = [ ./modules/home/standalone.nix ];
+
+          # Same argument, same reason as nixosModules.wsl-dev: the module tree
+          # stays plain, with no flake in scope.
+          _module.args.devenvTemplates = devenv-templates;
+        };
+      };
+
+      # The 15-line path: a machine is a name, a user and a few facts.
+      lib = {
+        mkWsl = import ./lib/mkWsl.nix { inherit nixpkgs self; };
+        mkWslHome = import ./lib/mkWslHome.nix { inherit nixpkgs home-manager self; };
+      };
+
+      templates = {
+        default = {
+          path = ./templates/default;
+          description = "A personal WSL machine built on the shared baseline";
+        };
+
+        home = {
+          path = ./templates/home;
+          description = "A personal WSL home environment, for a distro that is not NixOS";
+        };
       };
 
       # Built in CI so a change to the baseline is proven to evaluate and build
@@ -111,10 +137,21 @@
         ];
       };
 
+      # The non-NixOS tier, built too. GitHub's runners are Ubuntu, so CI
+      # exercises this one on the kind of machine it is actually for.
+      homeConfigurations.example = self.lib.mkWslHome {
+        user = {
+          name = "dev";
+          fullName = "Example Developer";
+          email = "dev@example.com";
+        };
+      };
+
       checks.${system} = {
         example = self.nixosConfigurations.example.config.system.build.toplevel;
         example-home-manager =
           self.nixosConfigurations.example-home-manager.config.system.build.toplevel;
+        example-home = self.homeConfigurations.example.activationPackage;
       };
 
       formatter.${system} = nixpkgs.legacyPackages.${system}.nixpkgs-fmt;

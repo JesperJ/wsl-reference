@@ -1,16 +1,16 @@
-# The user's environment: just enough that a project's devenv shell activates
-# on `cd` and git commits carry the right name. Shell taste is personal and is
-# added through company.home.modules, not here.
-{ config, lib, ... }:
+# The dotfiles tier: the user's own environment, and nothing that needs a
+# system. This is what the NixOS opt-in bridge layers on top of a machine that
+# already has direnv and a git identity of its own; ./standalone.nix adds the
+# rest for a distro that is not NixOS.
+#
+# Shell taste is personal and is added through company.home.modules, not here.
+{ ... }:
 
-let
-  cfg = config.company.home;
-in
 {
-  options.company.home.git = {
-    fullName = lib.mkOption { type = lib.types.str; default = ""; };
-    email = lib.mkOption { type = lib.types.str; default = ""; };
-  };
+  imports = [
+    ../options.nix
+    ./git.nix
+  ];
 
   config = {
     programs.home-manager.enable = true;
@@ -21,28 +21,13 @@ in
 
     # The bridge to every project: entering a directory with a .envrc that
     # says `use devenv` loads its shell. nix-direnv caches the evaluation so
-    # that is instant after the first time.
+    # that is instant after the first time. On NixOS the system already does
+    # this and the bridge switches this copy off, so the hook is not sourced
+    # twice.
     programs.direnv = {
       enable = true;
       nix-direnv.enable = true;
       config.global.hide_env_diff = true;
-    };
-
-    programs.git = {
-      enable = true;
-      settings = {
-        # Empty identity fields are omitted: git then prompts on the first
-        # commit, which beats committing as "".
-        user = lib.filterAttrs (_: v: v != "") {
-          name = cfg.git.fullName;
-          email = cfg.git.email;
-        };
-        init.defaultBranch = "main";
-        pull.rebase = true;
-        # Windows checkouts and WSL checkouts of the same repo disagree on
-        # line endings without this.
-        core.autocrlf = "input";
-      };
     };
   };
 }

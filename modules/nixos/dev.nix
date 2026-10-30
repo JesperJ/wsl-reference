@@ -1,4 +1,6 @@
 # What every project's devenv shell assumes the machine already has.
+# company.extraPackages is declared in ../options.nix; docker.enable is
+# declared here, because a home-manager tier cannot install a daemon.
 { config, lib, pkgs, devenvTemplates, ... }:
 
 let
@@ -12,22 +14,10 @@ let
   devenvify = pkgs.callPackage "${devenvTemplates}/package.nix" { };
 in
 {
-  options.company = {
-    docker.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Native Docker inside the distro, for devenv containers and VS Code dev containers.";
-    };
-
-    extraPackages = lib.mkOption {
-      type = lib.types.listOf lib.types.package;
-      default = [ ];
-      description = ''
-        System-wide extras for this one machine. Anything a project needs
-        belongs in that project's devenv.nix instead, so it travels with the
-        repository and not with the machine.
-      '';
-    };
+  options.company.docker.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = "Native Docker inside the distro, for devenv containers and VS Code dev containers.";
   };
 
   config = lib.mkMerge [

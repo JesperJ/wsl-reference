@@ -16,7 +16,8 @@
 #   ];
 #
 # Wired as a NixOS module so one `nixos-rebuild switch` still updates both
-# halves. The home baseline lives in ./home.
+# halves. It imports ./home, the dotfiles tier -- not ./home/standalone.nix,
+# which exists to replace a system this machine already has.
 { config, lib, ... }:
 
 let
@@ -39,18 +40,18 @@ in
       users.${cfg.user.name} = {
         imports = [ ./home ] ++ cfg.home.modules;
 
-        # Copied in rather than read from NixOS config, so ./home stays a
-        # plain home-manager module usable without NixOS too -- which is what
-        # makes it the delivery path for a non-NixOS WSL distro. It writes the
-        # same identity /etc/gitconfig already carries; a user-level file wins
-        # over /etc, so the overlap is duplication, not conflict.
-        company.home.git = { inherit (cfg.user) fullName email; };
+        # The home tier declares company.user itself, through
+        # ./options.nix -- the same names this NixOS config used. Copied in
+        # rather than read across, so ./home stays a plain home-manager module
+        # usable without NixOS, which is what makes it the delivery path for a
+        # distro that is not NixOS.
+        company.user = { inherit (cfg.user) name fullName email; };
 
         # dev.nix already sources the direnv hook from /etc, and two hooks mean
-        # two runs per prompt, so the home baseline's copy is switched off
-        # here. Its git config is left alone instead: that is a file, not a
-        # hook, and the user-level one simply wins over /etc -- someone opting
-        # in probably wants home-manager to own it so they can add aliases.
+        # two runs per prompt, so the home tier's copy is switched off here.
+        # Its git config is left alone instead: that is a file, not a hook, and
+        # the user-level one simply wins over /etc -- someone opting in
+        # probably wants home-manager to own it so they can add aliases.
         programs.direnv.enable = lib.mkForce false;
 
         home.stateVersion = config.system.stateVersion;

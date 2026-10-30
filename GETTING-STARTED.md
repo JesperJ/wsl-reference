@@ -5,6 +5,10 @@ loads itself when you `cd` into it. The [README](README.md) is the reference --
 what the options are, and why the baseline is shaped the way it is. This is the
 walkthrough.
 
+If your distro is not NixOS -- Ubuntu or Debian with Nix on top -- see
+[A distro that is not NixOS](README.md#a-distro-that-is-not-nixos) instead;
+this walkthrough assumes NixOS-WSL.
+
 If a maintainer handed you a ready-made `nixos.wsl` with your details already
 in it, your name and git identity are already set: install it as in step 1 and
 skip to step 4.

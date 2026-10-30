@@ -1,6 +1,7 @@
 # The one person this machine belongs to. A WSL distro has exactly one user --
 # wsl.defaultUser takes a single name -- so this is a single submodule, not a
-# list of members.
+# list of members. The identity fields themselves are declared in
+# ../options.nix, because the home tier needs the same names.
 #
 # No sshKeys option: there is no sshd here. WSL2 sits behind NAT, so reaching
 # it needs mirrored networking or a netsh portproxy on the Windows side, and
@@ -14,30 +15,10 @@ let
   cfg = config.company.user;
 in
 {
-  options.company.user = {
-    name = lib.mkOption {
-      type = lib.types.str;
-      example = "anna";
-      description = "Login name. Becomes wsl.defaultUser and the home-manager user.";
-    };
-
-    fullName = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = "Used for git's user.name. Omitted from git config when empty.";
-    };
-
-    email = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = "Used for git's user.email. Omitted from git config when empty.";
-    };
-
-    extraGroups = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      description = "Groups beyond the ones the baseline grants (wheel, docker).";
-    };
+  options.company.user.extraGroups = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = "Groups beyond the ones the baseline grants (wheel, docker).";
   };
 
   config = {
