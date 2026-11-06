@@ -184,10 +184,15 @@ it travels with the repository and everyone gets the same shell:
 
 ```bash
 cd ~/code/my-service
-devenvify                 # see what templates exist
-devenvify dotnet-mssql    # copy one in
-direnv allow
+devenvify                          # see the templates, and the three modes
+devenvify --shared dotnet-mssql    # set the project up with one
+cd .                               # direnv builds the shell
 ```
+
+`--shared` is the usual choice for your own repos: the project imports the
+team's setup and takes improvements when it chooses to. `--copy` gives the
+repo its own copy instead, and `--personal` is for a repo you can't commit
+devenv files to. `devenvify` with no arguments explains all three.
 
 That writes `devenv.nix`, `devenv.yaml` and `.envrc`, and appends to
 `.gitignore` without clobbering it. Existing files are left alone unless you
@@ -195,8 +200,8 @@ pass `-f`. From now on, entering the directory loads the project's shell and
 leaving it unloads it. `devenv init` still works if you would rather start
 empty.
 
-The first `direnv allow` builds the shell and can take a while; afterwards it
-is cached and instant.
+The first time builds the shell and can take a while; afterwards it is
+cached and instant.
 
 ## VS Code
 

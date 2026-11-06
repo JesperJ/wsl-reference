@@ -601,4 +601,4 @@ if ($failures.Count -gt 0) {
 
 Write-Host "`n==> Done. Open a shell with: wsl -d $Distro" -ForegroundColor Green
 Note "Later changes: cd ~/$ConfigDir, edit flake.nix, then 'rebuild'"
-Note "A project: cd <project> && devenvify && direnv allow"
+Note "A project: cd <project> && devenvify  (lists the templates and modes)"

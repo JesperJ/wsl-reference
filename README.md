@@ -110,14 +110,25 @@ The machine provides `devenv`, `direnv` and `devenvify`. In a project, start
 from a shared template rather than from scratch:
 
 ```bash
-devenvify                 # list the available templates
-devenvify dotnet-mssql    # copy one into the current directory
-direnv allow
+devenvify                          # list the templates and the modes
+devenvify --shared dotnet-mssql    # set the current directory up with one
+cd .                               # direnv builds the shell
 ```
 
-That writes `devenv.nix`, `devenv.yaml` and `.envrc`, and appends to
-`.gitignore` without clobbering it; existing files are left alone unless you
-pass `-f`. `devenv init` still works if you would rather begin empty.
+The mode says who owns the setup, and devenvify asks for one:
+
+- `--shared`: the project's `devenv.yaml` imports the shared parts, pinned
+  in its `devenv.lock` until someone runs `update-shared`;
+- `--copy`: the parts are copied into the repo and are its own from then on;
+- `--personal`: nothing goes into the repo's history; the folder is bound to
+  the template on this machine only, for a repo you can't commit to.
+
+`--shared` and `--copy` write `devenv.nix`, `devenv.yaml` and `.envrc`, and
+append to `.gitignore` without clobbering it; existing files are left alone
+unless you pass `-f`. The
+[devenv-templates README](https://github.com/JesperJ/devenv-templates#readme)
+has the parts and the details. `devenv init` still works if you would rather
+begin empty.
 
 The templates come from the `devenv-templates` input and are baked into the
 `devenvify` derivation, so nothing needs that repository checked out. After a
