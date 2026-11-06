@@ -3,7 +3,7 @@
 
   # For a WSL distro that is not NixOS. Pin a release tag so the baseline only
   # changes when you bump it: edit the ref, then `nix flake update wsl-base`.
-  inputs.wsl-base.url = "github:JesperJ/wsl-reference/v0.1.0";
+  inputs.wsl-base.url = "github:JesperJ/wsl-reference/v0.2.0";
 
   outputs = { wsl-base, ... }: {
     # Name this after your login name: home-manager looks up
