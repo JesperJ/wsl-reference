@@ -15,6 +15,13 @@
   WSL registration name, as `wsl -l -v` shows it. This is the only name that
   can collide with a distro you already have; it is unrelated to HostName.
 
+.PARAMETER LocalBaseline
+  Windows path to a clone of this repository. Use it when the baseline is not
+  published or not public: Nix fetches `github:` refs through the
+  unauthenticated GitHub API, so a private repository 404s however good your
+  git credentials are. This redirects both the template and the flake.nix
+  wsl-base input at the clone, through /mnt inside the distro.
+
 .PARAMETER ImageFile
   Path to a nixos.wsl image. Only used when Distro is not registered yet.
 
@@ -24,6 +31,9 @@
 
 .EXAMPLE
   .\bootstrap.ps1 -Distro dev -ImageFile '.\nixos (1).wsl' -UserName anna
+
+.EXAMPLE
+  .\bootstrap.ps1 -Distro dev -UserName anna -LocalBaseline C:\Users\you\wsl-reference
 #>
 [CmdletBinding()]
 param(
@@ -34,6 +44,7 @@ param(
   [string] $HostName,
   [string] $ImageFile,
   [string] $TemplateUrl = 'github:JesperJ/wsl-reference',
+  [string] $LocalBaseline,
   [string] $ConfigDir = 'wsl-config',
   [switch] $Force
 )
@@ -63,6 +74,33 @@ if ($HostName -notmatch '^[A-Za-z0-9-]{1,63}$') {
 }
 if ($UserName -eq 'nixos') {
   Write-Warning "UserName is 'nixos', the name the stock image already uses. Nothing will be renamed."
+}
+
+
+# -LocalBaseline is for a baseline that is not published yet, or not public:
+# a Windows clone of this repository, reached from inside the distro through
+# /mnt. It redirects BOTH references -- the template this script fetches and
+# the wsl-base input of the flake.nix it writes -- because overriding only the
+# first leaves the build reaching for github.
+$BaselineInDistro = $null
+if ($LocalBaseline) {
+  if (-not (Test-Path -LiteralPath $LocalBaseline)) {
+    throw "LocalBaseline path not found on this machine: $LocalBaseline"
+  }
+  $full = (Resolve-Path -LiteralPath $LocalBaseline).Path
+  if ($full -notmatch '^([A-Za-z]):\\(.*)$') {
+    throw "LocalBaseline must be a local Windows path like C:\Users\you\wsl-reference (got '$full')."
+  }
+  $BaselineInDistro = '/mnt/' + $Matches[1].ToLower() + '/' + ($Matches[2] -replace '\\', '/')
+  if ($BaselineInDistro -match "[' ]") {
+    throw "LocalBaseline resolves to '$BaselineInDistro', which contains a space or quote. Clone somewhere simpler."
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $full 'flake.nix'))) {
+    throw "No flake.nix in $full -- that does not look like a clone of wsl-reference."
+  }
+  if (-not $PSBoundParameters.ContainsKey('TemplateUrl')) {
+    $TemplateUrl = "path:$BaselineInDistro"
+  }
 }
 
 function Step($text) { Write-Host "`n==> $text" -ForegroundColor Cyan }
@@ -149,11 +187,21 @@ $flake = $template.
   Replace('Change Me', $FullName).
   Replace('change.me@company.com', $Email)
 
+
+if ($BaselineInDistro) {
+  $pinned = 'github:JesperJ/wsl-reference/v0.1.0'
+  if ($flake -notlike "*$pinned*") {
+    throw "Expected the template to pin '$pinned'; cannot redirect wsl-base to the local clone."
+  }
+  $flake = $flake.Replace($pinned, "path:$BaselineInDistro")
+}
+
 # base64 so a name with a quote, an accent or a space cannot break out of the
 # command line it travels on.
 $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($flake))
 Invoke-InDistro "echo '$encoded' | base64 -d > ~/$ConfigDir/flake.nix" | Out-Null
 Note "hostName = $HostName, user.name = $UserName"
+if ($BaselineInDistro) { Note "wsl-base input: path:$BaselineInDistro" }
 
 # A flake only sees tracked files.
 Invoke-InDistro "cd ~/$ConfigDir && git init -q 2>/dev/null; git add -A" | Out-Null
