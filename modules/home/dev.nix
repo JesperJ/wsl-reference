@@ -7,7 +7,10 @@
 let
   cfg = config.company;
 
-  devenvify = pkgs.callPackage "${devenvTemplates}/package.nix" { };
+  # rev: the commit devenvify --copy names in the files it copies.
+  devenvify = pkgs.callPackage "${devenvTemplates}/package.nix" {
+    rev = devenvTemplates.shortRev or null;
+  };
 in
 {
   config = {

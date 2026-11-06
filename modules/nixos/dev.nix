@@ -11,7 +11,10 @@ let
   # from `devenv init` and guesswork. The templates are baked into the
   # derivation, so no machine needs the templates repository checked out --
   # run `devenvify` with no arguments to list them.
-  devenvify = pkgs.callPackage "${devenvTemplates}/package.nix" { };
+  # rev: the commit devenvify --copy names in the files it copies.
+  devenvify = pkgs.callPackage "${devenvTemplates}/package.nix" {
+    rev = devenvTemplates.shortRev or null;
+  };
 in
 {
   options.company.docker.enable = lib.mkOption {
