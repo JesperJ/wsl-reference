@@ -152,25 +152,34 @@ function Invoke-InDistro {
   # bash ever sees the script. -e runs bash directly with the script intact.
   $wslArgs += @('-e', 'bash', '-lc', $Script)
 
-  if ($Stream) {
-    # Terminal-title escapes (ESC ] ... BEL) from the login shell are dropped,
-    # and so is a line left empty by that.
-    & wsl @wslArgs 2>&1 | ForEach-Object {
-      $line = "$_" -replace "\x1b\][^\x07]*(\x07|$)", ''
-      if ($line.Trim()) { Write-Host "    $line" -ForegroundColor DarkGray }
+  # What runs in the distro prints UTF-8, but PowerShell decodes a native
+  # command's output with [Console]::OutputEncoding -- the OEM code page on
+  # Windows -- so `•` arrived as `ÔÇó`. UTF-8 for the call, restored after.
+  # (wsl.exe's OWN messages are UTF-16: those go through Invoke-WslUtf16.)
+  $previous = [Console]::OutputEncoding
+  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  try {
+    if ($Stream) {
+      # Terminal-title escapes (ESC ] ... BEL) from the login shell are
+      # dropped, and so is a line left empty by that.
+      & wsl @wslArgs 2>&1 | ForEach-Object {
+        $line = "$_" -replace "\x1b\][^\x07]*(\x07|$)", ''
+        if ($line.Trim()) { Write-Host "    $line" -ForegroundColor DarkGray }
+      }
+      if ($LASTEXITCODE -ne 0) {
+        throw "Command failed inside '$Distro' (exit $LASTEXITCODE), output above: $Script"
+      }
+      return
     }
-    if ($LASTEXITCODE -ne 0) {
-      throw "Command failed inside '$Distro' (exit $LASTEXITCODE), output above: $Script"
-    }
-    return
-  }
 
-  $output = & wsl @wslArgs 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    $output | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
-    throw "Command failed inside '$Distro' (exit $LASTEXITCODE): $Script"
+    $output = & wsl @wslArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      $output | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+      throw "Command failed inside '$Distro' (exit $LASTEXITCODE): $Script"
+    }
+    return $output
   }
-  return $output
+  finally { [Console]::OutputEncoding = $previous }
 }
 
 # wsl.exe's own messages (`wsl -l`, `wsl --install`, not a distro's output)
@@ -455,11 +464,15 @@ if ! grep -qE '^[[:space:]]+devenv:' devenv.yaml; then
   fi
 fi
 direnv allow .
-# Build the shell once now: that writes devenv.lock, so it is committed below,
-# and the user's first cd into this directory is instant rather than a build.
-direnv exec . true >/dev/null 2>&1
 "@)
 $devenvOut | Where-Object { "$_" -like 'wrote *' } | ForEach-Object { Note "$_" }
+
+# Build the shell once now: that writes devenv.lock, so it is committed below,
+# and the user's first cd into this directory is instant rather than a build.
+# Streamed and announced: it downloads the shell's own nixpkgs and tools, a
+# few minutes on a cold machine, and was silent before.
+Step "Building the devenv shell for ~/$ConfigDir (downloads its tools: nixd, nixfmt)"
+Invoke-InDistro -Stream "cd ~/$ConfigDir && direnv exec . true"
 
 # A flake in a git repository only sees tracked files, so everything is added.
 # git is there now: the baseline installs it, and /etc/gitconfig carries the
