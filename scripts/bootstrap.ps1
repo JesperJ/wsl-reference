@@ -519,7 +519,7 @@ $hostname\
 $directory\
 $git_branch\
 $git_status\
-$nix_shell\
+${env_var.DEVENV_ROOT}\
 $dotnet\
 $cmd_duration\
 $line_break\
@@ -539,9 +539,11 @@ truncate_to_repo = true
 [git_branch]
 format = "on [$symbol$branch]($style) "
 
-# Inside a devenv project: shows that its shell is loaded.
-[nix_shell]
-format = "via [$symbol$state( \\($name\\))]($style) "
+# Inside a devenv project: its shell is loaded. (devenv sets DEVENV_ROOT;
+# starship's nix_shell module would say "impure (devenv-shell-env)".)
+[env_var.DEVENV_ROOT]
+format = "via [❄️ devenv]($style) "
+style = "bold blue"
 
 # The .NET SDK the folder's global.json picks.
 [dotnet]
