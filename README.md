@@ -60,7 +60,7 @@ Write a `default.nix` of your own:
 ```nix
 let
   wsl-base = import (builtins.fetchTarball {
-    url = "https://github.com/JesperJ/wsl-reference/archive/v0.2.0.tar.gz";
+    url = "https://github.com/JesperJ/wsl-reference/archive/v0.2.1.tar.gz";
     # Omit for a quick start, at the cost of a re-fetch every hour;
     # `nix-prefetch-url --unpack <url>` prints the value to pin.
     sha256 = "...";
