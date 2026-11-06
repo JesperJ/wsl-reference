@@ -81,11 +81,11 @@
     "devenv-templates": {
       "flake": false,
       "locked": {
-        "lastModified": 1793964260,
-        "narHash": "sha256-lwELOpsZTNXsVs28dvuGa3ZCRTGMLLrvKUC6lXkzJds=",
+        "lastModified": 1793975208,
+        "narHash": "sha256-zUiiwcPpR++U7cuXQnr+OeGcuEZ70/yDhdmP3DVqrK4=",
         "owner": "JesperJ",
         "repo": "devenv-templates",
-        "rev": "c48865047b1b29e30ac256343bce9079a409e05b",
+        "rev": "35de88244839577e478504f34e7d52f507c24fa9",
         "type": "github"
       },
       "original": {
