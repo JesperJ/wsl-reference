@@ -433,6 +433,17 @@ touch .gitignore
 for l in '.devenv*' 'devenv.local.nix' 'devenv.local.yaml' '.direnv' 'result' '*.swp' '*~'; do
   grep -qxF "`$l" .gitignore || echo "`$l" >> .gitignore
 done
+# devenv's modules pinned to the devenv installed here, as devenvify does for
+# projects: unpinned, the first build locks the newest devenv on GitHub, and
+# a devenv command older than its modules prints errors into every shell.
+# Only added when missing, so a pin the user moved is theirs.
+if ! grep -qE '^[[:space:]]+devenv:' devenv.yaml; then
+  v=`$(devenv version 2>/dev/null | sed -nE 's/^devenv ([0-9]+\.[0-9]+\.[0-9]+).*/v\1/p' || true)
+  if [ -n "`$v" ]; then
+    sed -i -E "0,/^inputs:[[:space:]]*`$/s||inputs:\n  devenv:\n    url: github:cachix/devenv/`$v|" devenv.yaml
+    echo "wrote devenv pin `$v in devenv.yaml"
+  fi
+fi
 direnv allow .
 # Build the shell once now: that writes devenv.lock, so it is committed below,
 # and the user's first cd into this directory is instant rather than a build.

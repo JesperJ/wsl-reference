@@ -129,9 +129,13 @@ template changes upstream: `nix flake update devenv-templates`, then rebuild.
 
 `devenv` itself is not nixpkgs' copy but its own flake input, pinned to a
 devenv release (`inputs.devenv.url`), so it can stay current while nixpkgs
-stays on the stable release. It has to: a project's `devenv.yaml` pulls
-current devenv modules, and a `devenv` command older than those prints
-errors into every shell it loads. To move it, edit the tag and run
+stays on the stable release. The command and devenv's modules -- what a
+`devenv.nix` can say -- are separate things, and a command older than the
+modules a project locked prints errors into every shell it loads. So
+`devenvify`, and the bootstrap for `~/wsl-config`, pin a new project's
+modules to the devenv installed on the machine (`inputs.devenv` in its
+`devenv.yaml`); without that, the first build locks whatever devenv is
+newest on GitHub. To move it, edit the tag and run
 `nix flake update devenv`. The binary comes prebuilt from devenv.cachix.org,
 which is why the input does not follow this flake's nixpkgs -- that would
 make every machine compile it.
