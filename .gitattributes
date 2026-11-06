@@ -1,0 +1,4 @@
+# LF everywhere, including a Windows checkout: the clone is read from inside
+# WSL too (bootstrap.ps1 -LocalBaseline, nix build path:/mnt/c/...), where a
+# CRLF shell script fails with "bad interpreter".
+* text=auto eol=lf

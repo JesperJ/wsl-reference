@@ -1,19 +1,51 @@
-# Inert while this directory lives inside nixos-config -- GitHub only reads
-# workflows from the repository root. It becomes live when wsl-reference/ is
-# spun out into its own repository.
 name: check
 
 on:
   push:
     branches: [main]
+    # A release tag is checked too: its pins must name the tag itself.
+    tags: ['v*']
   pull_request:
 
 jobs:
+  # Cheap, so it runs first and on its own: a release whose templates still
+  # pin the previous version hands every new machine the old baseline.
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version pins agree
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            scripts/check-version-pins.sh "${GITHUB_REF_NAME}"
+          else
+            scripts/check-version-pins.sh
+          fi
+
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bootstrap.ps1 parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/scripts/bootstrap.ps1", [ref]$null, [ref]$errors) | Out-Null
+          $errors | ForEach-Object { Write-Host "::error file=scripts/bootstrap.ps1,line=$($_.Extent.StartLineNumber)::$($_.Message)" }
+          if ($errors.Count) { exit 1 }
+
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+        with:
+          # The baseline's devenv input is fetched prebuilt from devenv's own
+          # cache, as on every machine; without it CI compiles devenv.
+          extra_nix_config: |
+            extra-substituters = https://devenv.cachix.org
+            extra-trusted-public-keys = devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=
       - run: nix flake check --print-build-logs
       - name: Template evaluates against this checkout
         run: |
