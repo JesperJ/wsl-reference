@@ -15,25 +15,45 @@
   WSL registration name, as `wsl -l -v` shows it. This is the only name that
   can collide with a distro you already have; it is unrelated to HostName.
 
+.PARAMETER HostName
+  What the machine calls itself. Defaults to <Windows computer name>-dev.
+
+.PARAMETER UserName
+  Your login inside the distro. Needed on the first run only: a rerun on a
+  machine that is already set up reads it from who the distro logs in as.
+
 .PARAMETER LocalBaseline
-  Windows path to a clone of this repository. Use it when the baseline is not
-  published or not public: Nix fetches `github:` refs through the
-  unauthenticated GitHub API, so a private repository 404s however good your
-  git credentials are. This redirects both the template and the flake.nix
-  wsl-base input at the clone, through /mnt inside the distro.
+  Windows path to a clone of this repository, for testing baseline changes
+  that are not released yet. It redirects both the template and the
+  flake.nix wsl-base input at the clone, through /mnt inside the distro,
+  uncommitted edits included. (Also the way in for a private fork: Nix
+  fetches `github:` refs through the unauthenticated GitHub API, so a
+  private repository 404s however good your git credentials are.)
 
 .PARAMETER ImageFile
   Path to a nixos.wsl image. Only used when Distro is not registered yet.
 
-.EXAMPLE
-  .\bootstrap.ps1 -Distro dev -UserName anna -FullName "Anna Example" `
-    -Email anna@company.com
+.PARAMETER InstallWsl
+  If WSL is missing, install it (`wsl --install --no-distribution`, behind an
+  elevation prompt) instead of stopping with instructions.
 
 .EXAMPLE
-  .\bootstrap.ps1 -Distro dev -ImageFile '.\nixos (1).wsl' -UserName anna
+  .\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+    -FullName "Anna Example" -Email anna@company.com
+
+  A new machine: installs the distro from the image, then everything else.
 
 .EXAMPLE
-  .\bootstrap.ps1 -Distro dev -UserName anna -LocalBaseline C:\Users\you\wsl-reference
+  .\bootstrap.ps1 -Distro dev
+
+  A rerun on a machine that is already set up: applies ~/wsl-config with
+  `switch` and checks the result. Renames nothing.
+
+.EXAMPLE
+  .\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+    -LocalBaseline C:\Code\repos\wsl-reference
+
+  Try unreleased baseline changes from a local clone.
 #>
 [CmdletBinding()]
 param(
@@ -69,7 +89,9 @@ if ($TemplateUrl -match "'") {
 if ($ConfigDir -notmatch '^[A-Za-z0-9._-]{1,64}$') {
   throw "ConfigDir '$ConfigDir' must be a single directory name under your home directory."
 }
-if (-not $HostName -and $UserName) { $HostName = "WSL-$($UserName.ToUpper())" }
+# The distro is named after the Windows machine it runs on, so it is obvious in
+# a prompt, a log or a network list which PC a shell belongs to.
+if (-not $HostName) { $HostName = "$($env:COMPUTERNAME)-dev" }
 if ($HostName -and $HostName -notmatch '^[A-Za-z0-9-]{1,63}$') {
   throw "HostName '$HostName' must be letters, digits and hyphens."
 }
@@ -109,12 +131,32 @@ function Note($text) { Write-Host "    $text" -ForegroundColor DarkGray }
 
 # Runs a bash login shell inside the distro. Login shell on purpose: that is
 # what puts nix on PATH on a stock image.
+#
+# -Stream prints each line as it arrives instead of collecting the output, for
+# the long builds: a cold build is many minutes, and silence for all of them
+# looks exactly like a hang. Nothing is returned then.
 function Invoke-InDistro {
-  param([Parameter(Mandatory = $true)][string] $Script, [switch] $AsRoot)
+  param([Parameter(Mandatory = $true)][string] $Script, [switch] $AsRoot, [switch] $Stream)
 
   $wslArgs = @('-d', $Distro)
   if ($AsRoot) { $wslArgs += @('--user', 'root') }
-  $wslArgs += @('--', 'bash', '-lc', $Script)
+  # -e, not --: `wsl -- cmd` hands the whole line to the distro's default
+  # shell first, which expands $vars (empty there) and eats quotes before our
+  # bash ever sees the script. -e runs bash directly with the script intact.
+  $wslArgs += @('-e', 'bash', '-lc', $Script)
+
+  if ($Stream) {
+    # Terminal-title escapes (ESC ] ... BEL) from the login shell are dropped,
+    # and so is a line left empty by that.
+    & wsl @wslArgs 2>&1 | ForEach-Object {
+      $line = "$_" -replace "\x1b\][^\x07]*(\x07|$)", ''
+      if ($line.Trim()) { Write-Host "    $line" -ForegroundColor DarkGray }
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw "Command failed inside '$Distro' (exit $LASTEXITCODE), output above: $Script"
+    }
+    return
+  }
 
   $output = & wsl @wslArgs 2>&1
   if ($LASTEXITCODE -ne 0) {
@@ -269,11 +311,13 @@ if (-not $rerun) {
       Replace('change.me@company.com', $Email)
 
     if ($BaselineInDistro) {
-      $pinned = 'github:JesperJ/wsl-reference/v0.1.0'
-      if ($flake -notlike "*$pinned*") {
-        throw "Expected the template to pin '$pinned'; cannot redirect wsl-base to the local clone."
+      # Whatever release the template pins -- matched by pattern, not by
+      # value, so a version bump never has to touch this script.
+      $pinned = 'github:JesperJ/wsl-reference/v[0-9][^"]*'
+      if ($flake -notmatch $pinned) {
+        throw "Expected the template to pin a wsl-reference release ($pinned); cannot redirect wsl-base to the local clone."
       }
-      $flake = $flake.Replace($pinned, "path:$BaselineInDistro")
+      $flake = $flake -replace $pinned, "path:$BaselineInDistro"
     }
 
     # base64 so a name with a quote, an accent or a space cannot break out of
@@ -295,7 +339,7 @@ if (-not $rerun) {
   # devenv.cachix.org is passed by hand on this first build only: the baseline
   # configures it, but has not been applied yet, and without it the pinned
   # devenv release is compiled from source instead of downloaded.
-  Invoke-InDistro "cd ~/$ConfigDir && sudo nixos-rebuild boot --flake .#wsl --option extra-experimental-features 'nix-command flakes' --option extra-substituters 'https://devenv.cachix.org' --option extra-trusted-public-keys 'devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw='"
+  Invoke-InDistro -Stream "cd ~/$ConfigDir && sudo nixos-rebuild boot --flake .#wsl --option extra-experimental-features 'nix-command flakes' --option extra-substituters 'https://devenv.cachix.org' --option extra-trusted-public-keys 'devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw='"
 
   # ----------------------------------------------------------------- restart
 
@@ -412,7 +456,7 @@ fi
 
 if ($rerun) {
   Step "Applying ~/$ConfigDir with nixos-rebuild switch"
-  Invoke-InDistro "cd ~/$ConfigDir && sudo nixos-rebuild switch --flake .#wsl"
+  Invoke-InDistro -Stream "cd ~/$ConfigDir && sudo nixos-rebuild switch --flake .#wsl"
 }
 
 # -------------------------------------------------------------------- verify
