@@ -13,6 +13,28 @@ If a maintainer handed you a ready-made `nixos.wsl` with your details already
 in it, your name and git identity are already set: install it as in step 1 and
 skip to step 4.
 
+## The scripted way
+
+`scripts/bootstrap.ps1` does steps 2 to 4 below, plus the restart and the
+checks, from the Windows side. Download it, then from PowerShell:
+
+```powershell
+.\bootstrap.ps1 -Distro dev -UserName anna -FullName "Anna Example" `
+  -Email anna@company.com
+```
+
+Add `-ImageFile '.\nixos.wsl'` and it installs the distro first, so a machine
+with no WSL distro at all is one command away from a working one. `-Distro` is
+the WSL registration name (`wsl -l -v`), which is also how you avoid colliding
+with a distro you already have; `-HostName` defaults to `WSL-<USERNAME>`.
+
+It is a PowerShell script rather than a shell script because the restart in
+step 3 cannot be done from inside the distro being restarted.
+
+The rest of this page is the same thing by hand, which is worth reading once:
+the script fails on the same things, and the troubleshooting at the bottom
+applies either way.
+
 ## Step 1: WSL and NixOS-WSL
 
 NixOS-WSL expects the Microsoft Store version of WSL 2, which is available on
@@ -35,6 +57,12 @@ On older WSL:
 ```powershell
 wsl --import NixOS $env:USERPROFILE\NixOS nixos.wsl --version 2
 ```
+
+The commands below say `NixOS`, the name a double-clicked image registers
+under. If you installed under another name -- `wsl --install --from-file
+nixos.wsl --name dev`, say, which is how you keep a second distro from
+colliding with one you already have -- substitute it everywhere, including
+in the restart sequence in step 3.
 
 Open a shell with `wsl -d NixOS`, or pick NixOS from the Windows Terminal
 dropdown. You are the `nixos` user for now, with passwordless sudo.
