@@ -1,7 +1,7 @@
 # What every project's devenv shell assumes the machine already has.
 # company.extraPackages is declared in ../options.nix; docker.enable is
 # declared here, because a home-manager tier cannot install a daemon.
-{ config, lib, pkgs, devenvTemplates, ... }:
+{ config, lib, pkgs, devenvTemplates, devenvPackage, ... }:
 
 let
   cfg = config.company;
@@ -23,9 +23,10 @@ in
   config = lib.mkMerge [
     {
       # git is not listed here: ./git.nix enables programs.git, which installs
-      # the package along with /etc/gitconfig.
+      # the package along with /etc/gitconfig. devenv is not nixpkgs' copy but
+      # the release pinned in the flake's own devenv input.
       environment.systemPackages = with pkgs; [
-        devenv
+        devenvPackage
         devenvify
         curl
         wget
@@ -46,6 +47,13 @@ in
       # VS Code Remote - WSL downloads a generic Linux node server and extension
       # binaries that NixOS' stub-ld refuses to start; nix-ld runs them.
       programs.nix-ld.enable = true;
+
+      # `code .` from the shell runs a Windows .exe, which needs WSL's
+      # WSLInterop binfmt handler. WSL registers it at start, but with systemd
+      # the binfmt_misc filesystem is mounted afresh and the entry is gone, so
+      # every .exe fails with "Exec format error". Registering it from NixOS
+      # puts it back on every boot. mkDefault: a machine can still opt out.
+      wsl.interop.register = lib.mkDefault true;
     }
 
     (lib.mkIf cfg.docker.enable {

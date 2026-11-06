@@ -40,9 +40,19 @@
       url = "github:JesperJ/devenv-templates";
       flake = false;
     };
+    # The devenv CLI, pinned to a release of its own so it can run ahead of
+    # the stable nixpkgs without moving the rest of the machine. It has to
+    # keep up: every project's devenv.yaml pulls current devenv modules, and a
+    # CLI older than those spills errors into each shell it loads.
+    #
+    # Deliberately no `inputs.nixpkgs.follows`: that would change the build,
+    # so every machine would compile devenv from source. Left alone, the
+    # binary comes prebuilt from devenv.cachix.org, which ./modules/*/nix.nix
+    # already trust. Bump by editing the tag, then `nix flake update devenv`.
+    devenv.url = "github:cachix/devenv/v2.4.0";
   };
 
-  outputs = { self, nixpkgs, home-manager, nixos-wsl, devenv-templates, ... }:
+  outputs = { self, nixpkgs, home-manager, nixos-wsl, devenv-templates, devenv, ... }:
     let
       system = "x86_64-linux";
       lib = nixpkgs.lib;
@@ -64,6 +74,7 @@
           # It travels with nixosModules.default, so a consumer who imports the
           # module into their own nixosSystem gets it without wiring anything.
           _module.args.devenvTemplates = devenv-templates;
+          _module.args.devenvPackage = devenv.packages.${system}.devenv;
         };
 
         # Opt-in: declarative dotfiles for someone who wants them. Added to
@@ -90,6 +101,7 @@
           # Same argument, same reason as nixosModules.wsl-dev: the module tree
           # stays plain, with no flake in scope.
           _module.args.devenvTemplates = devenv-templates;
+          _module.args.devenvPackage = devenv.packages.${system}.devenv;
         };
       };
 
