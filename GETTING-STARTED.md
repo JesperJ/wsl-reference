@@ -213,15 +213,19 @@ your Windows Terminal profile.
 
 ## Your prompt
 
-The shell comes with [starship](https://starship.rs): the directory, the git
-branch and its state, the devenv shell you are in, the .NET SDK. It is a
-default, not a requirement:
+The shell comes with [starship](https://starship.rs): the machine, the
+directory, the git branch and its state, the devenv shell you are in, the
+.NET SDK. It is a default, not a requirement:
 
-- **Change it:** write `~/.config/starship.toml`
-  ([configuration](https://starship.rs/config/), or start from a
-  [preset](https://starship.rs/presets/):
-  `starship preset plain-text-symbols -o ~/.config/starship.toml`). Your file
-  takes over from the system default as soon as it exists; no rebuild.
+- **Change it:** edit `~/.config/starship.toml`. The bootstrap script wrote
+  it once, commented, as a starting point, and never touches it again --
+  it is your file. Changes show on the next prompt; no rebuild.
+  ([Every option](https://starship.rs/config/); for a different look
+  altogether, `starship preset --list`.) Set up by hand rather than by the
+  script, there is no file, and starship uses its own defaults until you
+  write one.
+- **Back to the starting point:** delete the file and run the bootstrap
+  script again.
 - **Turn it off:** `company.shell.starship.enable = false;` in `extraModules`,
   then rebuild.
 

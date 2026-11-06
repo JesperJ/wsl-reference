@@ -12,16 +12,15 @@
     type = lib.types.bool;
     default = true;
     description = ''
-      The starship prompt in every interactive bash: the directory, the git
-      branch and state, the active devenv shell, the .NET SDK. A person
-      changes it with their own ~/.config/starship.toml, which takes over
-      from the system default as soon as it exists; set this to false to go
-      back to the plain bash prompt.
+      The starship prompt in every interactive bash. How it looks lives in
+      ~/.config/starship.toml, which bootstrap.ps1 writes once with a
+      commented starting point and never touches again; set this to false
+      to go back to the plain bash prompt.
     '';
   };
 
-  # NixOS's own module hooks starship into /etc's interactive bash init and
-  # skips the system settings when ~/.config/starship.toml (or
-  # $STARSHIP_CONFIG) exists.
+  # NixOS's own module hooks starship into /etc's interactive bash init. No
+  # settings here on purpose: the look is the user's file in $HOME, and
+  # without one starship uses its own defaults.
   config.programs.starship.enable = config.company.shell.starship.enable;
 }

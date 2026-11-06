@@ -157,7 +157,7 @@ flake:
 | `company.network.caCertificates` | `[]` | Corporate root CAs |
 | `company.network.proxy` / `noProxy` | `null` | HTTP(S) proxy, including for nix-daemon |
 | `company.network.windowsDns` | `true` | Let WSL generate `resolv.conf` from Windows |
-| `company.shell.starship.enable` | `true` | The starship prompt; your own `~/.config/starship.toml` overrides it |
+| `company.shell.starship.enable` | `true` | The starship prompt; its look is your `~/.config/starship.toml` |
 
 Most of these mean the same thing on a machine that is not NixOS; they are
 declared once in `modules/options.nix` and implemented twice. The exceptions

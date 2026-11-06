@@ -473,6 +473,74 @@ elif ! git diff --cached --quiet -- `$own; then
 fi
 "@) | Out-Null
 
+# ------------------------------------------------------------- prompt config
+
+# A starting point for the prompt, written once: ~/.config/starship.toml gets
+# this only if it does not exist, and from then on the file is the user's --
+# no rerun touches it. The baseline itself only provides the starship hook
+# (company.shell.starship.enable), so there is one place to change the look,
+# and it is in $HOME.
+$starshipToml = @'
+# Your prompt. bootstrap.ps1 wrote this once and will never touch it again:
+# it is yours to change. Every option: https://starship.rs/config/
+#
+# Start over from a ready-made look:  starship preset --list
+#                                     starship preset <name> -o ~/.config/starship.toml
+# Back to starship's built-in default: delete this file.
+# No starship at all: company.shell.starship.enable = false in ~/wsl-config.
+
+# A blank line before each prompt, so one command's output is easy to tell
+# from the next.
+add_newline = true
+
+# What the prompt shows, in order. Remove a line to drop it; $all instead
+# would show everything starship knows about.
+format = """
+$hostname\
+$directory\
+$git_branch\
+$git_status\
+$nix_shell\
+$dotnet\
+$cmd_duration\
+$line_break\
+$character"""
+
+# Which distro this is -- worth having once there is more than one.
+[hostname]
+ssh_only = false
+format = "[$hostname]($style) in "
+style = "bold dimmed green"
+
+# The last three folders, starting at the repository root when inside one.
+[directory]
+truncation_length = 3
+truncate_to_repo = true
+
+[git_branch]
+format = "on [$symbol$branch]($style) "
+
+# Inside a devenv project: shows that its shell is loaded.
+[nix_shell]
+format = "via [$symbol$state( \\($name\\))]($style) "
+
+# The .NET SDK the folder's global.json picks.
+[dotnet]
+format = "via [$symbol($version )(🎯 $tfm )]($style)"
+
+# How long the last command took, when it took more than two seconds.
+[cmd_duration]
+min_time = 2_000
+format = "took [$duration]($style) "
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+'@
+$starshipB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(($starshipToml -replace "`r", '') + "`n"))
+$seeded = (Invoke-InDistro "mkdir -p ~/.config && { [ -e ~/.config/starship.toml ] || { echo '$starshipB64' | base64 -d > ~/.config/starship.toml && echo wrote; }; }") -join ''
+if ($seeded -match 'wrote') { Note "wrote ~/.config/starship.toml -- your prompt, yours to change from now on" }
+
 if ($rerun) {
   Step "Applying ~/$ConfigDir with nixos-rebuild switch"
   Invoke-InDistro -Stream "cd ~/$ConfigDir && sudo nixos-rebuild switch --flake .#wsl"
