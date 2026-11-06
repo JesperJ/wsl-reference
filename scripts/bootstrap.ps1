@@ -55,6 +55,10 @@
 
   Try unreleased baseline changes from a local clone.
 #>
+# PowerShell 7: Windows PowerShell 5.1 turns a native command's stderr into
+# terminating errors under ErrorActionPreference=Stop, and nix writes its
+# progress to stderr. Refused up front rather than failing mid-build.
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
   [string] $Distro = 'NixOS',

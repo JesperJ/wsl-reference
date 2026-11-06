@@ -15,18 +15,31 @@ skip to step 4.
 
 ## The scripted way
 
-`scripts/bootstrap.ps1` does steps 2 to 4 below, plus the restart and the
-checks, from the Windows side. Download it, then from PowerShell:
+`scripts/bootstrap.ps1` does all of steps 1 to 4 below, plus the restart and
+the checks, from the Windows side. Download it and the
+[latest `nixos.wsl`](https://github.com/nix-community/NixOS-WSL/releases/latest),
+then from PowerShell (7, not Windows PowerShell 5.1):
 
 ```powershell
-.\bootstrap.ps1 -Distro dev -UserName anna -FullName "Anna Example" `
-  -Email anna@company.com
+.\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+  -FullName "Anna Example" -Email anna@company.com
 ```
 
-Add `-ImageFile '.\nixos.wsl'` and it installs the distro first, so a machine
-with no WSL distro at all is one command away from a working one. `-Distro` is
-the WSL registration name (`wsl -l -v`), which is also how you avoid colliding
-with a distro you already have; `-HostName` defaults to `WSL-<USERNAME>`.
+- `-Distro` is the WSL registration name (`wsl -l -v`), and how you keep it
+  from colliding with a distro you already have.
+- `-HostName` defaults to your Windows computer name plus `-dev`.
+- No WSL yet? It says how to install it, or does it for you with
+  `-InstallWsl` (behind an elevation prompt).
+- The build prints as it goes. A cold one is many minutes; let it run.
+
+You end up logged in as yourself, with your config in `~/wsl-config` as a git
+repository. Entering that directory gives a shell for editing it: `nixd` and
+`nixfmt` for the editor, and two commands, `rebuild` (apply your changes) and
+`update-baseline` (pull the pinned baseline, then rebuild).
+
+Running the script again on a machine that is already set up is safe, and
+needs only `-Distro`: it renames nothing, applies `~/wsl-config` with
+`switch`, and runs the checks again.
 
 It is a PowerShell script rather than a shell script because the restart in
 step 3 cannot be done from inside the distro being restarted.
@@ -69,6 +82,12 @@ dropdown. You are the `nixos` user for now, with passwordless sudo.
 
 ## Step 2: your own configuration
 
+First, as NixOS-WSL asks of a fresh image:
+
+```bash
+sudo nix-channel --update
+```
+
 The stock image does not have flakes switched on yet -- this baseline turns
 them on, but it has not been applied -- so the first few commands pass the
 feature explicitly. Either prefix each with the flag:
@@ -87,7 +106,7 @@ Now edit `flake.nix` and set four things:
 
 | Field | What it is |
 |---|---|
-| `hostName` | What the machine calls itself, e.g. `WSL-ANNA` |
+| `hostName` | What the machine calls itself: your Windows computer name plus `-dev`, e.g. `ANNA-PC-dev` |
 | `user.name` | The login name you want. **Not** `nixos` -- this creates your account |
 | `user.fullName` | Your name, for git commits |
 | `user.email` | Your work email, for git commits |
@@ -181,16 +200,27 @@ is cached and instant.
 ## VS Code
 
 Install the **WSL** extension on the Windows side, then run `code .` from
-inside a project. The server VS Code downloads is a generic Linux binary that
-NixOS would normally refuse to start; the baseline enables `nix-ld` so it runs.
-Nothing to configure.
+inside a project. Two things make that work, both in the baseline: `code` is
+a Windows program, which runs because the baseline registers WSL's handler
+for `.exe` files; and the server VS Code downloads is a generic Linux binary
+that NixOS would normally refuse to start, which runs because the baseline
+enables `nix-ld`. Nothing to configure.
+
+A shell opened from the Windows profile folder (`wsl -d dev` from a fresh
+terminal) starts there, in `/mnt/c/Users/<you>`. To land in `~` instead,
+open it with `wsl -d dev --cd ~`, or set the starting directory to `~` in
+your Windows Terminal profile.
 
 ## Day to day
+
+In `~/wsl-config`, if the script set it up, `rebuild` and `update-baseline`
+are shorthand for the first two rows.
 
 | Task | Command |
 |---|---|
 | Apply a config change | `sudo nixos-rebuild switch --flake .#wsl` |
 | Update the baseline | edit the tag in `inputs.wsl-base.url`, then `nix flake update wsl-base` and switch |
+| Try a baseline change before it is released | `sudo nixos-rebuild switch --flake .#wsl --override-input wsl-base path:/mnt/c/<clone> --no-write-lock-file` |
 | Update project templates | `nix flake update devenv-templates` in your config, then switch |
 | See past generations | `sudo nix-env --list-generations -p /nix/var/nix/profiles/system` |
 | Go back one | `sudo nixos-rebuild switch --rollback` |
@@ -232,6 +262,16 @@ Nix user. The baseline makes you one (`company.nix.trustUser`, on by default),
 so this means either that it is switched off, or that the cache needs its key
 in `company.nix.extraTrustedPublicKeys`.
 
+**`cannot execute binary file: Exec format error` running `code` or any `.exe`**
+WSL's handler for Windows programs is not registered. The baseline registers
+it (`wsl.interop.register`), so this means the machine is on a release from
+before that: update the baseline. To fix one machine meanwhile, set
+`wsl.interop.register = true;` in `extraModules`.
+
+**`structuredAttrs: command not found` when a devenv shell loads**
+The devenv command is older than the devenv modules the project pulled. The
+baseline pins a current devenv; update the baseline.
+
 **A project tool is missing**
 It belongs in that project's `devenv.nix`, not in the machine. If it is
 genuinely machine-wide -- something you want in every project -- it is
@@ -244,7 +284,8 @@ This is the discipline that keeps a shared baseline shareable:
 ```
 the baseline          -> what every WSL dev box has (nix, devenv, direnv,
                          docker, nix-ld, corporate CA/proxy, git)
-your flake.nix        -> who you are: hostname, login name, git identity
+your flake.nix        -> who you are: hostname, login name, git identity,
+                         and your own extras (extraModules, home.nix)
 project/devenv.nix    -> what the project needs: languages, services, tools
 ```
 

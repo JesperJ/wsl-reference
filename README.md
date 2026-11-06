@@ -18,47 +18,28 @@ project/devenv.nix -> what the project needs (languages, services, tools)
 
 ## For colleagues: setting up a machine
 
-[GETTING-STARTED.md](GETTING-STARTED.md) is the walkthrough, with the Windows
-side, the checks and the troubleshooting. In short:
+From PowerShell 7 on Windows, with the
+[latest `nixos.wsl`](https://github.com/nix-community/NixOS-WSL/releases/latest)
+downloaded:
 
-1. Install NixOS-WSL (<https://github.com/nix-community/NixOS-WSL>), open it.
-2. Create your config from the template. The stock image does not have flakes
-   on yet -- this baseline is what turns them on -- so pass the feature for
-   now, or use [Without flakes](#without-flakes) instead:
+```powershell
+.\scripts\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+  -FullName "Anna Example" -Email anna@company.com
+```
 
-   ```bash
-   mkdir ~/wsl-config && cd ~/wsl-config
-   nix --extra-experimental-features 'nix-command flakes' \
-     flake init -t github:JesperJ/wsl-reference
-   ```
+That installs the distro, writes your `flake.nix` from the template, builds
+it, does the restart a username change needs, and checks the result. Your
+config ends up in `~/wsl-config`, a git repository with a devenv shell for
+editing it (`rebuild`, `update-baseline`). Running the script again on a
+finished machine is safe: it applies the config and checks it, and renames
+nothing.
 
-3. Edit `flake.nix`: `hostName`, `user.name`, `user.fullName`, `user.email`.
-   `user.name` should be the user you want to log in as -- on the first
-   build NixOS-WSL creates it and makes it the default.
-4. Apply. `boot` rather than `switch`, and the restart sequence in full:
-   this first build changes the machine's username, and NixOS-WSL warns that
-   `switch` can leave the new account misconfigured.
+[GETTING-STARTED.md](GETTING-STARTED.md) is the walkthrough: what the script
+does, the same steps by hand, the checks and the troubleshooting.
 
-   ```bash
-   git init && git add -A   # flakes only see tracked files
-   sudo nixos-rebuild boot --flake .#wsl \
-     --option extra-experimental-features 'nix-command flakes'
-   ```
-
-   Then from Windows:
-
-   ```powershell
-   wsl -t NixOS
-   wsl -d NixOS --user root exit
-   wsl -t NixOS
-   ```
-
-   Open a shell again and you are your own user. Every later change is a
-   plain `sudo nixos-rebuild switch --flake .#wsl`, with no flag and no
-   restart.
-
-Updating later: bump the tag in `inputs.wsl-base.url`, run
-`nix flake update wsl-base`, then `sudo nixos-rebuild switch --flake .#wsl`.
+Updating later: bump the tag in `inputs.wsl-base.url`, then
+`update-baseline` in `~/wsl-config` -- or by hand, `nix flake update wsl-base`
+and `sudo nixos-rebuild switch --flake .#wsl`.
 
 ### Shortcut: a ready-made image
 
@@ -119,7 +100,7 @@ wsl-base.inputs.nixpkgs.lib.nixosSystem {
   system = "x86_64-linux";
   modules = [
     wsl-base.nixosModules.default
-    { networking.hostName = "WSL-ANNA"; company.user.name = "anna";
+    { networking.hostName = "ANNA-PC-dev"; company.user.name = "anna";
       system.stateVersion = "26.05"; }
   ];
 }
@@ -145,6 +126,15 @@ pass `-f`. `devenv init` still works if you would rather begin empty.
 The templates come from the `devenv-templates` input and are baked into the
 `devenvify` derivation, so nothing needs that repository checked out. After a
 template changes upstream: `nix flake update devenv-templates`, then rebuild.
+
+`devenv` itself is not nixpkgs' copy but its own flake input, pinned to a
+devenv release (`inputs.devenv.url`), so it can stay current while nixpkgs
+stays on the stable release. It has to: a project's `devenv.yaml` pulls
+current devenv modules, and a `devenv` command older than those prints
+errors into every shell it loads. To move it, edit the tag and run
+`nix flake update devenv`. The binary comes prebuilt from devenv.cachix.org,
+which is why the input does not follow this flake's nixpkgs -- that would
+make every machine compile it.
 
 From then on, entering the directory loads the project's shell. Binary caches
 a project lists in `devenv.yaml` (`cachix.pull`) are honoured because the
@@ -186,7 +176,7 @@ nixosConfigurations.wsl = nixpkgs.lib.nixosSystem {
   system = "x86_64-linux";
   modules = [
     wsl-base.nixosModules.default
-    { networking.hostName = "WSL-ANNA"; company.user.name = "anna";
+    { networking.hostName = "ANNA-PC-dev"; company.user.name = "anna";
       system.stateVersion = "26.05"; }
     ./anything-else.nix
   ];
@@ -309,6 +299,11 @@ Three things are root's, once, before the first switch:
 - **`flake.lock` is committed.** Consumers get the versions CI tested, not
   whatever the branches moved to today. Bump deliberately with
   `nix flake update <input>`.
+- **Windows programs run from the shell.** With systemd, WSL's binfmt entry
+  for `.exe` files does not survive boot, and `code .` -- or any `.exe` --
+  fails with "Exec format error". The baseline sets
+  `wsl.interop.register` so NixOS registers it itself; NixOS-WSL leaves that
+  off by default. `mkDefault`, so a machine can turn it back off.
 - `system.stateVersion` is set at install and never bumped afterwards; it is
   not the NixOS version.
 
@@ -319,10 +314,34 @@ nix flake check                  # builds all three examples: the machine, the
                                  # home-manager opt-in, and the non-NixOS tier
 ```
 
-`.github/workflows/check.yml` does the same, plus evaluates the template and
-checks that `default.nix` reaches the same derivation as the flake. It
-runs in the standalone repository; the copy inside `nixos-config` is inert,
-because GitHub only reads workflows from a repository root.
+`.github/workflows/check.yml` does the same, plus: evaluates both templates
+against the checkout, checks that `default.nix` reaches the same derivation
+as the flake, checks that `scripts/bootstrap.ps1` parses, and checks that
+every release pin agrees (`scripts/check-version-pins.sh`) -- on a tag push,
+that they name that tag. It runs on pushes to `main`, on `v*` tags and on
+pull requests.
+
+## Releasing
+
+A machine gets the baseline through a tag: the templates pin
+`github:JesperJ/wsl-reference/vX.Y.Z`, and so does the README's flakeless
+example. A release has to move all of them, or new machines quietly get the
+previous version. So it is one command, on `main` with a clean tree, once
+the changes are merged:
+
+```bash
+scripts/release.sh v0.2.0
+```
+
+It rewrites every pin to the new tag, checks none was missed, commits
+"Release v0.2.0" and tags it -- and stops there. Look it over, then publish:
+
+```bash
+git push origin main v0.2.0
+```
+
+CI checks the pushed tag again. Existing machines move when their owner
+bumps the tag in their own `flake.nix` and runs `update-baseline`.
 
 ## Spinning out
 
@@ -342,6 +361,4 @@ git subtree push --prefix=wsl-reference \
 `git subtree push` re-splits and pushes in one step, which is what makes it
 repeatable -- the `git subtree split -b <branch>` form used for the first
 export refuses to run again once that branch exists.
-
-Remaining before a colleague can use it: tag `v0.1.0`, which is the ref
-`templates/default/flake.nix` pins, and make the repository public.
+x
