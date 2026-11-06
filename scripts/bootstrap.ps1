@@ -170,17 +170,21 @@ function Invoke-InDistro {
   return $output
 }
 
-# `wsl -l -q` writes UTF-16; without this it arrives full of NUL bytes.
-function Get-RegisteredDistros {
+# wsl.exe's own messages (`wsl -l`, `wsl --install`, not a distro's output)
+# are UTF-16. Read as anything else they arrive with a NUL after every
+# character: spaced out in a log or transcript, and useless to compare. So
+# they are decoded as UTF-16 here and returned as plain lines; $LASTEXITCODE
+# is wsl's.
+function Invoke-WslUtf16 {
   $previous = [Console]::OutputEncoding
   try {
     [Console]::OutputEncoding = [System.Text.Encoding]::Unicode
-    return (& wsl -l -q) |
-      ForEach-Object { $_.Trim() } |
-      Where-Object { $_ -ne '' }
+    & wsl @args 2>&1 | ForEach-Object { "$_".Trim() } | Where-Object { $_ -ne '' }
   }
   finally { [Console]::OutputEncoding = $previous }
 }
+
+function Get-RegisteredDistros { Invoke-WslUtf16 -l -q }
 
 # ------------------------------------------------------------------- install
 
@@ -222,7 +226,7 @@ if ($registered -contains $Distro) {
 elseif ($ImageFile) {
   if (-not (Test-Path -LiteralPath $ImageFile)) { throw "Image file not found: $ImageFile" }
   Step "Installing '$Distro' from $ImageFile"
-  & wsl --install --from-file $ImageFile --name $Distro
+  Invoke-WslUtf16 --install --from-file $ImageFile --name $Distro | ForEach-Object { Note $_ }
   if ($LASTEXITCODE -ne 0) { throw "wsl --install failed (exit $LASTEXITCODE)." }
 }
 else {

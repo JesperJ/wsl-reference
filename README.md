@@ -12,10 +12,6 @@ your flake         -> who you are (hostName, user, optional extras)
 project/devenv.nix -> what the project needs (languages, services, tools)
 ```
 
-> This directory is self-contained so it can be split out of `nixos-config`
-> into its own repository; see [Spinning out](#spinning-out). Nothing in it
-> refers to files outside `wsl-reference/`.
-
 ## For colleagues: setting up a machine
 
 From PowerShell 7 on Windows, with the
@@ -346,23 +342,3 @@ git push origin main v0.2.0
 
 CI checks the pushed tag again. Existing machines move when their owner
 bumps the tag in their own `flake.nix` and runs `update-baseline`.
-
-## Spinning out
-
-This tree is mirrored to <https://github.com/JesperJ/wsl-reference>, which is
-what consumers point at and where CI runs. History was kept by splitting the
-subdirectory rather than copying files, so the standalone repository carries
-the commits that made each change here.
-
-To push later changes made in `nixos-config`:
-
-```bash
-cd nixos-config
-git subtree push --prefix=wsl-reference \
-  git@github.com:JesperJ/wsl-reference.git main
-```
-
-`git subtree push` re-splits and pushes in one step, which is what makes it
-repeatable -- the `git subtree split -b <branch>` form used for the first
-export refuses to run again once that branch exists.
-x
