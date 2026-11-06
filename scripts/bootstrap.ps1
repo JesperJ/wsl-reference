@@ -38,7 +38,7 @@
 [CmdletBinding()]
 param(
   [string] $Distro = 'NixOS',
-  [Parameter(Mandatory = $true)][string] $UserName,
+  [string] $UserName,
   [string] $FullName = '',
   [string] $Email = '',
   [string] $HostName,
@@ -46,7 +46,8 @@ param(
   [string] $TemplateUrl = 'github:JesperJ/wsl-reference',
   [string] $LocalBaseline,
   [string] $ConfigDir = 'wsl-config',
-  [switch] $Force
+  [switch] $Force,
+  [switch] $InstallWsl
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,7 +57,7 @@ $ErrorActionPreference = 'Stop'
 # Anything that reaches a bash command line below is checked here, so the
 # in-distro scripts can stay single-quoted with no escaping to get wrong.
 # Your name and e-mail are NOT on that list: they travel as base64.
-if ($UserName -notmatch '^[a-z_][a-z0-9_-]{0,31}$') {
+if ($UserName -and $UserName -notmatch '^[a-z_][a-z0-9_-]{0,31}$') {
   throw "UserName '$UserName' is not a valid Linux login name (lower case, starts with a letter or _)."
 }
 if ($Distro -notmatch '^[A-Za-z0-9._-]{1,64}$') {
@@ -68,8 +69,8 @@ if ($TemplateUrl -match "'") {
 if ($ConfigDir -notmatch '^[A-Za-z0-9._-]{1,64}$') {
   throw "ConfigDir '$ConfigDir' must be a single directory name under your home directory."
 }
-if (-not $HostName) { $HostName = "WSL-$($UserName.ToUpper())" }
-if ($HostName -notmatch '^[A-Za-z0-9-]{1,63}$') {
+if (-not $HostName -and $UserName) { $HostName = "WSL-$($UserName.ToUpper())" }
+if ($HostName -and $HostName -notmatch '^[A-Za-z0-9-]{1,63}$') {
   throw "HostName '$HostName' must be letters, digits and hyphens."
 }
 if ($UserName -eq 'nixos') {
@@ -137,8 +138,34 @@ function Get-RegisteredDistros {
 
 # ------------------------------------------------------------------- install
 
-if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
-  throw "wsl.exe not found. Install WSL first: wsl --install --no-distribution"
+# wsl.exe exists on every Windows 10/11 machine as an inbox stub, so finding
+# it proves nothing. `wsl --version` only succeeds on the Microsoft Store WSL,
+# which is the one NixOS-WSL needs; the stub, or a machine with the feature
+# switched off, exits non-zero.
+$wslReady = $false
+if (Get-Command wsl -ErrorAction SilentlyContinue) {
+  & wsl --version *> $null
+  $wslReady = ($LASTEXITCODE -eq 0)
+}
+if (-not $wslReady) {
+  if (-not $InstallWsl) {
+    throw @"
+WSL is not installed or not the Microsoft Store version, which NixOS-WSL needs.
+Install it from an elevated PowerShell:
+    wsl --install --no-distribution
+restart Windows if it asks, then re-run this script.
+Or re-run this script with -InstallWsl and it will do that for you (it asks for elevation).
+"@
+  }
+  Step "Installing WSL (an elevation prompt will appear)"
+  $proc = Start-Process -FilePath 'wsl.exe' -ArgumentList '--install', '--no-distribution' `
+    -Verb RunAs -Wait -PassThru
+  if ($proc.ExitCode -ne 0) { throw "wsl --install --no-distribution failed (exit $($proc.ExitCode))." }
+  & wsl --version *> $null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "`n==> WSL is installed but needs a Windows restart. Restart, then run this script again." -ForegroundColor Yellow
+    return
+  }
 }
 
 $registered = Get-RegisteredDistros
@@ -161,72 +188,247 @@ Registered right now: $($registered -join ', ')
 "@
 }
 
-# ----------------------------------------------------------------- configure
+# ------------------------------------------------------------------ channels
 
-Step "Writing ~/$ConfigDir/flake.nix in '$Distro'"
+# The first command NixOS-WSL asks for on a fresh image, before any rebuild.
+# The flake build itself does not read channels, but the stock image's tooling
+# does, and skipping it leaves the machine in a state upstream never tests.
+# Run every time, not only on a fresh install, so the outcome does not depend
+# on what was done to the distro by hand before.
+Step "Updating the root nix channel in '$Distro'"
+Invoke-InDistro -AsRoot "nix-channel --update" | Out-Null
 
-$existing = Invoke-InDistro "test -f ~/$ConfigDir/flake.nix && echo yes || echo no"
-if (($existing -join '') -match 'yes' -and -not $Force) {
-  throw "~/$ConfigDir/flake.nix already exists in '$Distro'. Re-run with -Force to overwrite it."
-}
+# --------------------------------------------------------------------- state
 
-# The template is fetched rather than embedded here, so there is one copy of
-# it to keep correct. Flakes are not on yet on a stock image, hence the flag.
-Invoke-InDistro "mkdir -p ~/$ConfigDir && cd ~/$ConfigDir && nix --extra-experimental-features 'nix-command flakes' flake init -t '$TemplateUrl'" | Out-Null
+# Who the distro logs in as says how far an earlier run got. The stock image
+# logs in as nixos; after the first build and restart it is your own login.
+# So a rerun on a finished machine renames nothing: it applies the flake.nix
+# that is already there with `switch`, and checks the result. The last line is
+# taken because a stock image prints its welcome banner first.
+$currentUser = "$((Invoke-InDistro 'whoami') |
+  Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } |
+  Select-Object -Last 1)".Trim()
+$rerun = $currentUser -ne 'nixos'
 
-$template = (Invoke-InDistro "cat ~/$ConfigDir/flake.nix") -join "`n"
-foreach ($placeholder in @('WSL-CHANGEME', '"changeme"', 'Change Me', 'change.me@company.com')) {
-  if ($template -notlike "*$placeholder*") {
-    throw "The template no longer contains '$placeholder'; this script needs updating."
+if ($rerun) {
+  if ($UserName -and $UserName -ne $currentUser) {
+    throw "'$Distro' is already set up for '$currentUser'. This script does not rename an existing user; change user.name in ~/$ConfigDir/flake.nix if you really mean to."
+  }
+  $UserName = $currentUser
+  Step "'$Distro' is already set up for '$UserName'"
+  foreach ($p in 'HostName', 'FullName', 'Force') {
+    if ($PSBoundParameters.ContainsKey($p)) { Note "Ignoring -$p on a rerun: edit ~/$ConfigDir/flake.nix instead." }
   }
 }
-
-$flake = $template.
-  Replace('WSL-CHANGEME', $HostName).
-  Replace('"changeme"', '"' + $UserName + '"').
-  Replace('Change Me', $FullName).
-  Replace('change.me@company.com', $Email)
-
-
-if ($BaselineInDistro) {
-  $pinned = 'github:JesperJ/wsl-reference/v0.1.0'
-  if ($flake -notlike "*$pinned*") {
-    throw "Expected the template to pin '$pinned'; cannot redirect wsl-base to the local clone."
-  }
-  $flake = $flake.Replace($pinned, "path:$BaselineInDistro")
+elseif (-not $UserName) {
+  throw "-UserName is required on the first run, while '$Distro' still logs in as nixos."
 }
 
-# base64 so a name with a quote, an accent or a space cannot break out of the
-# command line it travels on.
-$encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($flake))
-Invoke-InDistro "echo '$encoded' | base64 -d > ~/$ConfigDir/flake.nix" | Out-Null
-Note "hostName = $HostName, user.name = $UserName"
-if ($BaselineInDistro) { Note "wsl-base input: path:$BaselineInDistro" }
+if (-not $rerun) {
+  # --------------------------------------------------------------- configure
 
-# A flake only sees tracked files.
-Invoke-InDistro "cd ~/$ConfigDir && git init -q 2>/dev/null; git add -A" | Out-Null
+  Step "Writing ~/$ConfigDir/flake.nix in '$Distro'"
 
-# --------------------------------------------------------------------- build
+  $existing = (Invoke-InDistro "test -f ~/$ConfigDir/flake.nix && echo yes || echo no") -join ''
+  # `nix flake init` refuses to overwrite a file that differs from the
+  # template, so -Force has to clear it first.
+  if ($existing -match 'yes' -and $Force) {
+    Invoke-InDistro "rm -f ~/$ConfigDir/flake.nix" | Out-Null
+  }
 
-Step "Building the first generation (this takes a while on a cold store)"
-Note "nixos-rebuild boot, not switch: this build renames the machine's user."
-Invoke-InDistro "cd ~/$ConfigDir && sudo nixos-rebuild boot --flake .#wsl --option extra-experimental-features 'nix-command flakes'"
+  if ($existing -match 'yes' -and -not $Force) {
+    # An earlier run got this far and stopped -- a failed build, say. Its
+    # flake.nix is kept, so finishing the job does not undo hand edits.
+    Note "Keeping the existing ~/$ConfigDir/flake.nix (-Force rewrites it from the template)."
+  }
+  else {
+    # The template is fetched rather than embedded here, so there is one copy
+    # of it to keep correct. Flakes are not on yet on a stock image, hence the
+    # flag.
+    Invoke-InDistro "mkdir -p ~/$ConfigDir && cd ~/$ConfigDir && nix --extra-experimental-features 'nix-command flakes' flake init -t '$TemplateUrl'" | Out-Null
 
-# ------------------------------------------------------------------- restart
+    # A login shell on a stock image prints the NixOS-WSL welcome banner to
+    # stdout from /etc/profile, so the file is fenced off with a marker and
+    # only what follows it is kept. Without this the banner is written back
+    # into flake.nix.
+    $marker = '__WSL_BOOTSTRAP_FLAKE__'
+    $catOutput = @(Invoke-InDistro "echo $marker; cat ~/$ConfigDir/flake.nix" | ForEach-Object { "$_" })
+    $at = [array]::IndexOf($catOutput, $marker)
+    if ($at -lt 0) { throw "Could not read ~/$ConfigDir/flake.nix back from '$Distro'." }
+    $template = ($catOutput | Select-Object -Skip ($at + 1)) -join "`n"
+    foreach ($placeholder in @('WSL-CHANGEME', '"changeme"', 'Change Me', 'change.me@company.com')) {
+      if ($template -notlike "*$placeholder*") {
+        throw "The template no longer contains '$placeholder'; this script needs updating."
+      }
+    }
 
-Step "Restarting '$Distro' so the new user takes effect"
-& wsl -t $Distro | Out-Null
-& wsl -d $Distro --user root exit | Out-Null
-& wsl -t $Distro | Out-Null
+    $flake = $template.
+      Replace('WSL-CHANGEME', $HostName).
+      Replace('"changeme"', '"' + $UserName + '"').
+      Replace('Change Me', $FullName).
+      Replace('change.me@company.com', $Email)
+
+    if ($BaselineInDistro) {
+      $pinned = 'github:JesperJ/wsl-reference/v0.1.0'
+      if ($flake -notlike "*$pinned*") {
+        throw "Expected the template to pin '$pinned'; cannot redirect wsl-base to the local clone."
+      }
+      $flake = $flake.Replace($pinned, "path:$BaselineInDistro")
+    }
+
+    # base64 so a name with a quote, an accent or a space cannot break out of
+    # the command line it travels on.
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($flake))
+    Invoke-InDistro "echo '$encoded' | base64 -d > ~/$ConfigDir/flake.nix" | Out-Null
+    Note "hostName = $HostName, user.name = $UserName"
+    if ($BaselineInDistro) { Note "wsl-base input: path:$BaselineInDistro" }
+  }
+
+  # No git step here: the stock image has no git, and a directory that is not
+  # a repository is read as a plain path flake, which sees every file. The
+  # repository is made below, once the baseline has installed git.
+
+  # ------------------------------------------------------------------- build
+
+  Step "Building the first generation (this takes a while on a cold store)"
+  Note "nixos-rebuild boot, not switch: this build renames the machine's user."
+  # devenv.cachix.org is passed by hand on this first build only: the baseline
+  # configures it, but has not been applied yet, and without it the pinned
+  # devenv release is compiled from source instead of downloaded.
+  Invoke-InDistro "cd ~/$ConfigDir && sudo nixos-rebuild boot --flake .#wsl --option extra-experimental-features 'nix-command flakes' --option extra-substituters 'https://devenv.cachix.org' --option extra-trusted-public-keys 'devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw='"
+
+  # ----------------------------------------------------------------- restart
+
+  Step "Restarting '$Distro' so the new user takes effect"
+  & wsl -t $Distro | Out-Null
+  & wsl -d $Distro --user root exit | Out-Null
+  & wsl -t $Distro | Out-Null
+}
+
+# --------------------------------------------------------------- config home
+
+# The flake was written while logged in as nixos, so it sits in /home/nixos,
+# but the user it created logs in to /home/<name>. Move it to where
+# ~/$ConfigDir finds it. Safe to repeat: it does nothing once moved, and never
+# overwrites a config already in the new home.
+$src = "/home/nixos/$ConfigDir"
+$dst = "/home/$UserName/$ConfigDir"
+if ($src -ne $dst) {
+  $moved = (Invoke-InDistro -AsRoot "if [ -d $src ] && [ ! -e $dst ]; then mv $src $dst && chown -R ${UserName}:`$(id -gn $UserName) $dst && echo moved; fi") -join ''
+  if ($moved -match 'moved') { Note "moved $src to $dst" }
+}
+$hasFlake = (Invoke-InDistro "test -f ~/$ConfigDir/flake.nix && echo yes || echo no") -join ''
+if ($hasFlake -notmatch 'yes') {
+  throw "No flake.nix in $dst (nor in $src). Nothing to apply."
+}
+
+# -------------------------------------------------------------- devenv shell
+
+# ~/$ConfigDir is also a devenv project, so cd-ing into it gives the tools for
+# editing a Nix config: nixd (language server), nixfmt, and `rebuild`. It only
+# shapes the shell in that directory; the machine is still flake.nix. Files
+# that already exist are left alone, so a user's own edits survive a rerun.
+$devenvFiles = [ordered]@{
+  'devenv.nix'  = @'
+{ pkgs, ... }:
+
+{
+  # Tools for editing this machine config. The machine itself is flake.nix
+  # (and home.nix, if you use it); this file only shapes the shell you get in
+  # this directory.
+  packages = [
+    pkgs.nixd   # language server, for the editor
+    pkgs.nixfmt # formatter
+  ];
+
+  scripts.rebuild.exec = ''
+    sudo nixos-rebuild switch --flake "$DEVENV_ROOT#wsl" "$@"
+  '';
+  scripts.update-baseline.exec = ''
+    nix flake update wsl-base --flake "$DEVENV_ROOT" && rebuild
+  '';
+
+  enterShell = ''
+    echo "wsl-config: edit flake.nix, then 'rebuild'. 'update-baseline' pulls the pinned baseline."
+  '';
+}
+'@
+  'devenv.yaml' = @'
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+'@
+  '.envrc'      = @'
+#!/usr/bin/env bash
+
+eval "$(devenv direnvrc)"
+use devenv
+'@
+}
+
+# Everything below travels as base64 and is piped into bash, so the scripts
+# can quote freely without going through wsl.exe's command line.
+function Invoke-InDistroBash([string] $Bash) {
+  $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(($Bash -replace "`r", '')))
+  Invoke-InDistro "echo $b64 | base64 -d | bash"
+}
+
+$writeFiles = foreach ($name in $devenvFiles.Keys) {
+  $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(($devenvFiles[$name] -replace "`r", '') + "`n"))
+  "[ -e '$name' ] || { echo '$b64' | base64 -d > '$name'; echo 'wrote $name'; }"
+}
+$devenvOut = Invoke-InDistroBash (@"
+set -e
+cd ~/$ConfigDir
+$($writeFiles -join "`n")
+touch .gitignore
+for l in '.devenv*' 'devenv.local.nix' 'devenv.local.yaml' '.direnv' 'result' '*.swp' '*~'; do
+  grep -qxF "`$l" .gitignore || echo "`$l" >> .gitignore
+done
+direnv allow .
+# Build the shell once now: that writes devenv.lock, so it is committed below,
+# and the user's first cd into this directory is instant rather than a build.
+direnv exec . true >/dev/null 2>&1
+"@)
+$devenvOut | Where-Object { "$_" -like 'wrote *' } | ForEach-Object { Note "$_" }
+
+# A flake in a git repository only sees tracked files, so everything is added.
+# git is there now: the baseline installs it, and /etc/gitconfig carries the
+# identity. A new repository gets one commit, so the user starts from a clean
+# history rather than a tree nix warns is dirty; after that it is theirs, and
+# a rerun only commits the files this script itself manages.
+Invoke-InDistroBash (@"
+set -e
+cd ~/$ConfigDir
+[ -d .git ] || git init -q
+git add -A
+own='devenv.nix devenv.yaml devenv.lock .envrc .gitignore'
+if ! git rev-parse -q --verify HEAD >/dev/null; then
+  git commit -qm 'Machine config, written by bootstrap.ps1'
+elif ! git diff --cached --quiet -- `$own; then
+  git commit -qm 'Add a devenv shell for editing this config' -- `$own
+fi
+"@) | Out-Null
+
+if ($rerun) {
+  Step "Applying ~/$ConfigDir with nixos-rebuild switch"
+  Invoke-InDistro "cd ~/$ConfigDir && sudo nixos-rebuild switch --flake .#wsl"
+}
 
 # -------------------------------------------------------------------- verify
 
 Step "Checking the result"
 $failures = @()
 
-$who = (Invoke-InDistro 'whoami') -join ''
+# Invoke-InDistro merges stderr in, and wsl.exe itself writes warnings there
+# (e.g. a systemd user session that failed to start). Compare stdout only, and
+# report anything on stderr as its own problem rather than as a wrong user.
+$whoOut = @(Invoke-InDistro 'whoami')
+$who = ($whoOut | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] }) -join ''
+$whoErr = ($whoOut | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] }) -join ' '
 if ($who.Trim() -eq $UserName) { Note "whoami: $who" }
 else { $failures += "expected to be '$UserName' but the shell opened as '$who'" }
+if ($whoErr) { $failures += "wsl reported a problem on login: $whoErr" }
 
 $configuredEmail = (Invoke-InDistro 'git config --get user.email || true') -join ''
 if ($Email -and $configuredEmail.Trim() -ne $Email) {
@@ -246,5 +448,5 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "`n==> Done. Open a shell with: wsl -d $Distro" -ForegroundColor Green
-Note "Later changes: cd ~/$ConfigDir && sudo nixos-rebuild switch --flake .#wsl"
+Note "Later changes: cd ~/$ConfigDir, edit flake.nix, then 'rebuild'"
 Note "A project: cd <project> && devenvify && direnv allow"

@@ -92,11 +92,9 @@ Now edit `flake.nix` and set four things:
 | `user.fullName` | Your name, for git commits |
 | `user.email` | Your work email, for git commits |
 
-Then put it under git, because a flake only sees tracked files:
-
-```bash
-git init && git add -A
-```
+Leave git for now: the stock image does not have it, and the baseline is what
+installs it. Without a repository the directory is read as a plain path flake,
+which sees every file, so nothing is lost.
 
 ## Step 3: the first switch
 
@@ -110,8 +108,14 @@ In the WSL shell:
 
 ```bash
 sudo nixos-rebuild boot --flake .#wsl \
-  --option extra-experimental-features 'nix-command flakes'
+  --option extra-experimental-features 'nix-command flakes' \
+  --option extra-substituters 'https://devenv.cachix.org' \
+  --option extra-trusted-public-keys 'devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw='
 ```
+
+The last two lines point this one build at devenv's binary cache, which the
+baseline sets up but has not applied yet; without them devenv is compiled from
+source.
 
 Then from Windows (PowerShell or Command Prompt):
 
@@ -121,8 +125,16 @@ wsl -d NixOS --user root exit
 wsl -t NixOS
 ```
 
-Open a WSL shell again. `whoami` should be your own name. From here on a
-change is just:
+Open a WSL shell again. `whoami` should be your own name. Your config is
+still in the old `nixos` home, so move it into yours and put it under git,
+which is installed now -- a flake in a repository only sees tracked files:
+
+```bash
+sudo mv /home/nixos/wsl-config ~ && sudo chown -R "$USER:" ~/wsl-config
+cd ~/wsl-config && git init && git add -A && git commit -m "My machine config"
+```
+
+From here on a change is just:
 
 ```bash
 sudo nixos-rebuild switch --flake .#wsl
