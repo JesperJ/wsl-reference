@@ -229,7 +229,10 @@ if ($registered -contains $Distro) {
 elseif ($ImageFile) {
   if (-not (Test-Path -LiteralPath $ImageFile)) { throw "Image file not found: $ImageFile" }
   Step "Installing '$Distro' from $ImageFile"
-  Invoke-WslUtf16 --install --from-file $ImageFile --name $Distro | ForEach-Object { Note $_ }
+  # --no-launch: otherwise wsl opens a shell in the new distro once it is
+  # installed and waits for someone to type `exit` in it -- invisibly, since
+  # the output is captured, so the script just appears to hang.
+  Invoke-WslUtf16 --install --from-file $ImageFile --name $Distro --no-launch | ForEach-Object { Note $_ }
   if ($LASTEXITCODE -ne 0) { throw "wsl --install failed (exit $LASTEXITCODE)." }
 }
 else {
