@@ -157,12 +157,13 @@ flake:
 | `company.network.caCertificates` | `[]` | Corporate root CAs |
 | `company.network.proxy` / `noProxy` | `null` | HTTP(S) proxy, including for nix-daemon |
 | `company.network.windowsDns` | `true` | Let WSL generate `resolv.conf` from Windows |
+| `company.shell.starship.enable` | `true` | The starship prompt; your own `~/.config/starship.toml` overrides it |
 
 Most of these mean the same thing on a machine that is not NixOS; they are
 declared once in `modules/options.nix` and implemented twice. The exceptions
 need a whole system and are NixOS-only: `company.user.extraGroups`,
-`company.docker.enable`, `company.nix.trustUser` and
-`company.network.windowsDns`. See
+`company.docker.enable`, `company.nix.trustUser`,
+`company.network.windowsDns` and `company.shell.starship.enable`. See
 [A distro that is not NixOS](#a-distro-that-is-not-nixos).
 
 The company-wide values (CA, proxy, internal cache) belong in this repository,

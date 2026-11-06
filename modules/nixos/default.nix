@@ -19,5 +19,6 @@
     ./dev.nix
     ./git.nix
     ./network.nix
+    ./shell.nix
   ];
 }

@@ -211,6 +211,24 @@ terminal) starts there, in `/mnt/c/Users/<you>`. To land in `~` instead,
 open it with `wsl -d dev --cd ~`, or set the starting directory to `~` in
 your Windows Terminal profile.
 
+## Your prompt
+
+The shell comes with [starship](https://starship.rs): the directory, the git
+branch and its state, the devenv shell you are in, the .NET SDK. It is a
+default, not a requirement:
+
+- **Change it:** write `~/.config/starship.toml`
+  ([configuration](https://starship.rs/config/), or start from a
+  [preset](https://starship.rs/presets/):
+  `starship preset plain-text-symbols -o ~/.config/starship.toml`). Your file
+  takes over from the system default as soon as it exists; no rebuild.
+- **Turn it off:** `company.shell.starship.enable = false;` in `extraModules`,
+  then rebuild.
+
+If some symbols show as boxes, your terminal font lacks them: pick a
+[Nerd Font](https://www.nerdfonts.com) in Windows Terminal, or use the
+`plain-text-symbols` preset above.
+
 ## Day to day
 
 In `~/wsl-config`, if the script set it up, `rebuild` and `update-baseline`
