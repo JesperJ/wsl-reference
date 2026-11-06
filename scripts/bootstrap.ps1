@@ -51,6 +51,9 @@ if ($UserName -notmatch '^[a-z_][a-z0-9_-]{0,31}$') {
 if ($Distro -notmatch '^[A-Za-z0-9._-]{1,64}$') {
   throw "Distro '$Distro' has characters that are awkward to pass through a shell. Pick a simpler name."
 }
+if ($TemplateUrl -match "'") {
+  throw "TemplateUrl must not contain a single quote; it is passed to a shell."
+}
 if ($ConfigDir -notmatch '^[A-Za-z0-9._-]{1,64}$') {
   throw "ConfigDir '$ConfigDir' must be a single directory name under your home directory."
 }
@@ -131,7 +134,7 @@ if (($existing -join '') -match 'yes' -and -not $Force) {
 
 # The template is fetched rather than embedded here, so there is one copy of
 # it to keep correct. Flakes are not on yet on a stock image, hence the flag.
-Invoke-InDistro "mkdir -p ~/$ConfigDir && cd ~/$ConfigDir && nix --extra-experimental-features 'nix-command flakes' flake init -t $TemplateUrl" | Out-Null
+Invoke-InDistro "mkdir -p ~/$ConfigDir && cd ~/$ConfigDir && nix --extra-experimental-features 'nix-command flakes' flake init -t '$TemplateUrl'" | Out-Null
 
 $template = (Invoke-InDistro "cat ~/$ConfigDir/flake.nix") -join "`n"
 foreach ($placeholder in @('WSL-CHANGEME', '"changeme"', 'Change Me', 'change.me@company.com')) {
