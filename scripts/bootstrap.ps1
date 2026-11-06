@@ -12,8 +12,10 @@
   from inside the distro that is being restarted.
 
 .PARAMETER Distro
-  WSL registration name, as `wsl -l -v` shows it. This is the only name that
-  can collide with a distro you already have; it is unrelated to HostName.
+  WSL registration name, as `wsl -l -v` shows it, and what `wsl -d` takes.
+  Defaults to `dev` -- not `NixOS`, the name a stock install registers under,
+  so it does not land on a NixOS distro someone already has. It is unrelated
+  to HostName.
 
 .PARAMETER HostName
   What the machine calls itself. Defaults to <Windows computer name>-dev.
@@ -38,19 +40,20 @@
   elevation prompt) instead of stopping with instructions.
 
 .EXAMPLE
-  .\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+  .\bootstrap.ps1 -ImageFile '.\nixos.wsl' -UserName anna `
     -FullName "Anna Example" -Email anna@company.com
 
-  A new machine: installs the distro from the image, then everything else.
+  A new machine: installs the distro as `dev` from the image, then
+  everything else. Open it with `wsl -d dev`.
 
 .EXAMPLE
-  .\bootstrap.ps1 -Distro dev
+  .\bootstrap.ps1
 
   A rerun on a machine that is already set up: applies ~/wsl-config with
   `switch` and checks the result. Renames nothing.
 
 .EXAMPLE
-  .\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+  .\bootstrap.ps1 -ImageFile '.\nixos.wsl' -UserName anna `
     -LocalBaseline C:\Code\repos\wsl-reference
 
   Try unreleased baseline changes from a local clone.
@@ -61,7 +64,7 @@
 #Requires -Version 7.0
 [CmdletBinding()]
 param(
-  [string] $Distro = 'NixOS',
+  [string] $Distro = 'dev',
   [string] $UserName,
   [string] $FullName = '',
   [string] $Email = '',

@@ -19,7 +19,7 @@ From PowerShell 7 on Windows, with the
 downloaded:
 
 ```powershell
-.\scripts\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+.\scripts\bootstrap.ps1 -ImageFile '.\nixos.wsl' -UserName anna `
   -FullName "Anna Example" -Email anna@company.com
 ```
 

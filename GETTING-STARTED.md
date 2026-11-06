@@ -21,12 +21,12 @@ the checks, from the Windows side. Download it and the
 then from PowerShell (7, not Windows PowerShell 5.1):
 
 ```powershell
-.\bootstrap.ps1 -Distro dev -ImageFile '.\nixos.wsl' -UserName anna `
+.\bootstrap.ps1 -ImageFile '.\nixos.wsl' -UserName anna `
   -FullName "Anna Example" -Email anna@company.com
 ```
 
-- `-Distro` is the WSL registration name (`wsl -l -v`), and how you keep it
-  from colliding with a distro you already have.
+- The distro is registered as `dev`: open it with `wsl -d dev`. `-Distro`
+  picks another name (`wsl -l -v` lists the ones you have).
 - `-HostName` defaults to your Windows computer name plus `-dev`.
 - No WSL yet? It says how to install it, or does it for you with
   `-InstallWsl` (behind an elevation prompt).
@@ -38,7 +38,8 @@ repository. Entering that directory gives a shell for editing it: `nixd` and
 `update-baseline` (pull the pinned baseline, then rebuild).
 
 Running the script again on a machine that is already set up is safe, and
-needs only `-Distro`: it renames nothing, applies `~/wsl-config` with
+needs no arguments (`-Distro` if you picked another name): it renames
+nothing, applies `~/wsl-config` with
 `switch`, and runs the checks again.
 
 It is a PowerShell script rather than a shell script because the restart in
